@@ -1,5 +1,3 @@
 /bin/*
-!bin/
-
 /examples/*/simulation/
 /examples/*/output/
