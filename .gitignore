@@ -1,4 +1,5 @@
-/output/*
-!/output/
+/bin/*
+!/bin/
 
-/examples/*/simulation
+/examples/*/simulation/
+/examples/*/output/

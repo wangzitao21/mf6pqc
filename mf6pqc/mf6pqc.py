@@ -48,6 +48,7 @@ class mf6pqc:
         db_path: str = "input_data/phreeqc.dat", 
         pqi_path: str = "input_data/advect.pqi", 
         modflow_dll_path: str = "C:\\ProgramFiles\\MODFLOW\\libmf6.dll", 
+        output_dir: str = "output",
         workspace: str = "./simulation",
         if_update_porosity_K: bool = False,
     ):
@@ -92,7 +93,7 @@ class mf6pqc:
         self.pqi_path = pqi_path
         self.modflow_dll_path = modflow_dll_path
         self.workspace = workspace
-        self.output_dir = os.path.join("output", self.case_name)
+        self.output_dir = output_dir
 
         # --- 实例变量 (将在 setup 阶段创建) ---
         self.phreeqc_rm = None

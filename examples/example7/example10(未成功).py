@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import time
 import modflowapi
 
-from mf6pqc.mf6pqc import mf6pqc
+from scr.mf6pqc import mf6pqc
 
 from modflow_models.modflow_model_10 import transport_model
 

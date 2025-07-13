@@ -1,0 +1,8 @@
+numpy
+pandas
+scipy
+matplotlib
+seaborn
+flopy
+modflowapi
+phreeqcrm

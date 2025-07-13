@@ -6,18 +6,18 @@ import matplotlib.pyplot as plt
 import time
 import modflowapi
 
-from mf6pqc.mf6pqc import mf6pqc
+from scr.mf6pqc import mf6pqc
 
-from modflow_models.modflow_model_3 import create_and_run_models
+from modflow_models.modflow_model_5 import create_and_run_models
 
 ic_mapping = {
-    'solution':           0,   # 所有单元格使用 SOLUTION 0
-    'equilibrium_phases': 1,   # 所有单元格使用 EQUILIBRIUM_PHASES 1
+    'solution': 0,   # 所有单元格使用 SOLUTION 0
+    'exchange': 1,   # 所有单元格使用 EQUILIBRIUM_PHASES 1
 }
 
 sim_params = {
-    "case_name": "PHT3D_CASE_3",
-    "nxyz": 80,
+    "case_name": "PHT3D_CASE_5",
+    "nxyz": 17,
     "nthreads": 6,
 
     "temperature": 25.0,
@@ -29,12 +29,10 @@ sim_params = {
     "componentH2O": False,
     "solution_density_volume": False,
 
-    "db_path": "./input_data/PHT3D_CASE_3/phreeqc.dat", 
-    "pqi_path": "./input_data/PHT3D_CASE_3/phreeqc.pqi",
+    "db_path": "./input_data/PHT3D_CASE_5/phreeqc.dat", 
+    "pqi_path": "./input_data/PHT3D_CASE_5/phreeqc.pqi",
     "modflow_dll_path": f"C:\\ProgramFiles\\MODFLOW\\libmf6.dll",
-    "workspace": './simulation/PHT3D_CASE_3',
-
-    "if_update_porosity_K": False
+    "workspace": './simulation/PHT3D_CASE_5'
 }
 
 simulator = mf6pqc(**sim_params)
@@ -44,7 +42,7 @@ bc_conc = simulator.get_initial_concentrations(1)
 components = simulator.get_components()
 
 create_and_run_models(
-    sim_ws='./simulation/PHT3D_CASE_3',
+    sim_ws='./simulation/PHT3D_CASE_5',
     species_list=components,
     initial_conc=initial_concentrations,
     bc=bc_conc,

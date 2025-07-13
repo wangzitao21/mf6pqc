@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 import time
 import modflowapi
 
-from mf6pqc.mf6pqc import mf6pqc
+from scr.mf6pqc import mf6pqc
 
-from modflow_models.modflow_model_2 import create_and_run_models
+from modflow_models.modflow_model_3 import create_and_run_models
 
 ic_mapping = {
     'solution':           0,   # 所有单元格使用 SOLUTION 0
@@ -16,9 +16,10 @@ ic_mapping = {
 }
 
 sim_params = {
-    "case_name": "PHT3D_CASE_2",
-    "nxyz": 50,
+    "case_name": "PHT3D_CASE_3",
+    "nxyz": 80,
     "nthreads": 6,
+
     "temperature": 25.0,
     "pressure": 2.0,
     "porosity": 0.35,
@@ -28,14 +29,13 @@ sim_params = {
     "componentH2O": False,
     "solution_density_volume": False,
 
-    "db_path": "./input_data/PHT3D_CASE_2/phreeqc.dat", 
-    "pqi_path": "./input_data/PHT3D_CASE_2/phreeqc.pqi",
+    "db_path": "./input_data/PHT3D_CASE_3/phreeqc.dat", 
+    "pqi_path": "./input_data/PHT3D_CASE_3/phreeqc.pqi",
     "modflow_dll_path": f"C:\\ProgramFiles\\MODFLOW\\libmf6.dll",
-    "workspace": './simulation/PHT3D_CASE_2',
+    "workspace": './simulation/PHT3D_CASE_3',
 
-    "if_update_porosity_K": True
+    "if_update_porosity_K": False
 }
-
 
 simulator = mf6pqc(**sim_params)
 initial_concentrations = simulator.setup(ic_map=ic_mapping)
@@ -44,7 +44,7 @@ bc_conc = simulator.get_initial_concentrations(1)
 components = simulator.get_components()
 
 create_and_run_models(
-    sim_ws='./simulation/PHT3D_CASE_2',
+    sim_ws='./simulation/PHT3D_CASE_3',
     species_list=components,
     initial_conc=initial_concentrations,
     bc=bc_conc,

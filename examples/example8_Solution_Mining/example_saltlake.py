@@ -4,7 +4,7 @@ import numpy as np
 import traceback
 import phreeqcrm
 import modflowapi
-from mf6pqc.mf6pqc import mf6pqc
+from scr.mf6pqc import mf6pqc
 from modflow_models.saltlake_example import transport_model
 
 def main():
