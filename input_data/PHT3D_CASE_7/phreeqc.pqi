@@ -1,0 +1,69 @@
+SOLUTION 0
+	units mol/L
+	temp 25
+	pH   7.00 charge
+	pe   4.00
+    S_a  0.00
+	S_b  0.00
+	S_c  0.00
+	S_cc 0.00
+	S_ccc 0.00
+END
+SOLUTION 1
+	units mol/L
+	temp 25
+	pH   7.00 charge
+	pe   7.00
+    S_a  0.001
+	S_b  0.00
+	S_c  0.00
+	S_cc 0.00
+	S_ccc 0.00
+END
+KINETICS 1
+	S_a
+	-formula S_a -1.0 S_b 0.5
+	-parms 0.2 #2.314814e-006
+	-m0 10.0
+
+	S_b
+	-formula S_b -1.0 S_c 0.3 S_cc 0.2 S_ccc 0.1
+	-parms 0.1 # 1.157400e-006
+	-m0 10.0
+
+	S_c
+	-formula S_c -1.0
+	-parms 0.02 #2.314814e-007
+	-m0 10.0
+	
+	S_cc
+	-formula S_cc -1.0
+	-parms 0.02 #2.314814e-007
+	-m0 10.0
+
+	S_ccc
+	-formula S_ccc -1.0
+	-parms 0.02 #2.314814e-007
+	-m0 10.0
+END
+USER_PUNCH 1
+    -headings S_a S_b S_c S_cc S_ccc
+    -start
+    20 PUNCH TOT("S_a") #* TOT("water") / SOLN_VOL
+    30 PUNCH TOT("S_b") #* TOT("water") / SOLN_VOL
+    50 PUNCH TOT("S_c") #* TOT("water") / SOLN_VOL
+    60 PUNCH TOT("S_cc") #* TOT("water") / SOLN_VOL
+	70 PUNCH TOT("S_ccc") #* TOT("water") / SOLN_VOL
+END
+SELECTED_OUTPUT 1
+    -step flase
+    -high_precision true
+    -water false
+    soln false
+    pH false
+    sim false
+    state false
+    time false
+    pe false
+    distance false
+END

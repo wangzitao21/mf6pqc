@@ -1,0 +1,68 @@
+SOLUTION 0
+	units mol/L
+	temp 25
+	pH   6.96
+	pe   1.67
+	C(4) 0.00394
+	Ca   0.00692
+	Cl   0.00103 charge
+	Mg   0.00196
+	Na   0.00130
+	K    0.0000665
+	Fe   0.00005392
+	Mn(2) 0.0000473
+	Al   0.000000127
+	Si   0.00194
+	S(6) 0.00748
+END
+SOLUTION 1
+	units mol/L
+	temp 25
+	pH   3.938
+	pe   7.69
+	C(4) 0.000492
+	Ca   0.0108
+	Cl   0.000119
+	Mg   0.000969
+	Na   0.00139
+	K    0.000793
+	Fe   0.0306002
+	Mn(2) 9.83E-06
+	Al   0.0043
+	Si   0.00208
+	S(6) 0.05
+END
+EQUILIBRIUM_PHASES 1
+	Calcite   0.0  0.0063
+	Siderite  0.0  0.0018161
+	Gypsum    0.0  0.0
+	SiO2(a)   0.0  0.14245
+	Gibbsite  0.0  0.0008812
+	Fe(OH)3(a) 0.0 0.000651
+END
+USER_PUNCH 1
+    -headings Calcite Ca C(4) Siderite Fe(2) Fe(3) Gibbsite Al S(6) Gypsum
+    -start
+    10 PUNCH EQUI("Calcite")
+    20 PUNCH TOT("Ca") * TOT("water") / SOLN_VOL
+    30 PUNCH TOT("C(4)") * TOT("water") / SOLN_VOL
+    50 PUNCH EQUI("Siderite")
+    60 PUNCH TOT("Fe(+2)") * TOT("water") / SOLN_VOL
+	70 PUNCH TOT("Fe(+3)") * TOT("water") / SOLN_VOL
+	80 PUNCH EQUI("Gibbsite")
+	90 PUNCH TOT("Al") * TOT("water") / SOLN_VOL
+	100 PUNCH TOT("S(6)") * TOT("water") / SOLN_VOL
+	110 PUNCH EQUI("Gypsum")
+END
+SELECTED_OUTPUT 1
+    -step flase
+    -high_precision true
+    -water false
+    soln false
+    pH true
+    sim false
+    state false
+    time false
+    pe true
+    distance false
+END

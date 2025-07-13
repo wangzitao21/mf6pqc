@@ -1,0 +1,5 @@
+/output/*
+!/output/
+
+/simulation/*
+!/simulation/

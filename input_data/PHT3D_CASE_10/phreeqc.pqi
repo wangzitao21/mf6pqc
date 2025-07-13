@@ -1,0 +1,163 @@
+SOLUTION 0
+    units    mol/L
+    temp     2.500000e+001
+    pH       6.768000e+000
+    pe       1.385200e+001
+    Benz     0.000000e+000
+    Tolu     0.000000e+000
+    Ethy     0.000000e+000
+    Xyl      0.000000e+000
+    Al       1.270000e-007
+    C(4)     9.592000e-003
+    C(-4)    0.000000e+000
+    Ca       4.209000e-003
+    Cl       5.412000e-003
+    Fe(2)    1.990000e-022
+    Fe(3)    6.970000e-014
+    K        4.630000e-004
+    Mg       2.648000e-003
+    N(3)     0.000000e+000
+    N(5)     4.308000e-006
+    N(0)     0.000000e+000
+    Na       4.610000e-003
+    O(0)     5.000000e-004
+    S(-2)    0.000000e+000
+    S(6)     3.033600e-003
+END
+SOLUTION 1
+    units    mol/L
+    temp     2.500000e+001
+    pH       7.0
+    pe       4.0
+    Benz     0.000000e+000
+    Tolu     0.000000e+000
+    Ethy     0.000000e+000
+    Xyl      0.000000e+000
+    Al       1.270000e-007
+    C(4)     9.592000e-003
+    C(-4)    0.000000e+000
+    Ca       4.209000e-003
+    Cl       0.0
+    Fe(2)    0.0
+    Fe(3)    6.970000e-014
+    K        4.630000e-004
+    Mg       2.648000e-003
+    N(3)     0.000000e+000
+    N(5)     0.0
+    N(0)     0.0
+    Na       0.0
+    O(0)     0.0
+    S(-2)    0.0
+    S(6)     0.0
+END
+EQUILIBRIUM_PHASES 1
+    Calcite  0.00 1.000000e+000
+    Goethite 0.00 1.000000e-003
+    Pyrite   0.00 0.000000e+000
+END
+KINETICS 0
+    Benz
+    -parms 0.000864
+    -m0 1.000000e+001
+    -Formula Benz -1.0
+
+    Tolu
+    -parms 0.01728
+    -m0 1.000000e+001
+    -Formula Tolu -1.0
+
+    Ethy
+    -parms 0.00001728
+    -m0 1.000000e+001
+    -Formula Ethy -1.0
+
+    Xyl
+    -parms 0.00001728
+    -m0 1.000000e+001
+    -Formula Xyl -1.0
+
+    Benznapl
+    -parms 0.00864
+    -m0 1.000000e+001
+    -Formula Benz   1.0
+
+    Tolunapl
+    -parms 0.00864
+    -m0 1.000000e+001
+    -Formula Tolu   1.0
+
+    Ethynapl
+    -parms 0.00864
+    -m0 1.000000e+001
+    -Formula Ethy   1.0
+
+    Xylnapl
+    -parms 0.00864
+    -m0 1.000000e+001
+    -Formula Xyl    1.0
+END
+KINETICS 1
+    Benz
+    -parms 0.000864
+    -m0 1.000000e+001
+    -Formula Benz -1.0
+
+    Tolu
+    -parms 0.01728
+    -m0 1.000000e+001
+    -Formula Tolu -1.0
+
+    Ethy
+    -parms 0.00001728
+    -m0 1.000000e+001
+    -Formula Ethy -1.0
+
+    Xyl
+    -parms 0.00001728
+    -m0 1.000000e+001
+    -Formula Xyl -1.0
+
+    Benznapl
+    -parms 0.00864
+    -m0 0.2
+    -Formula Benz   1.0
+
+    Tolunapl
+    -parms 0.00864
+    -m0 0.2
+    -Formula Tolu   1.0
+
+    Ethynapl
+    -parms 0.00864
+    -m0 1.000000e+001
+    -Formula Ethy   1.0
+
+    Xylnapl
+    -parms 0.00864
+    -m0 1.000000e+001
+    -Formula Xyl    1.0
+END
+USER_PUNCH 1
+    -headings Benznapl Tolunapl Goethite Calcite Ca Benz Tolu
+    -start
+    10 PUNCH KIN("Benznapl") #  * TOT("water") / SOLN_VOL
+	20 PUNCH KIN("Tolunapl") # * TOT("water") / SOLN_VOL
+	30 PUNCH EQUI("Goethite")
+    40 PUNCH EQUI("Calcite")
+    50 PUNCH TOT("Ca") * TOT("water") / SOLN_VOL
+    60 PUNCH TOT("Benz")
+    70 PUNCH TOT("Tolu")
+    -end
+END
+SELECTED_OUTPUT 1
+    -step flase
+    -high_precision true
+    -water false
+    soln false
+    pH false
+    sim false
+    state false
+    time false
+    pe false
+    distance false
+END
