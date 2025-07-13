@@ -3,8 +3,8 @@ import flopy
 
 def create_and_run_models(
     sim_ws='simulation',
-    perlen=0.24305, 
-    nstp=50, 
+    perlen=0.24, 
+    nstp=210, 
     bc=None,
     species_list=None, 
     initial_conc=None
@@ -82,7 +82,7 @@ def create_and_run_models(
     steady = [steady]
     
     # 创建MODFLOW 6模拟
-    sim = flopy.mf6.MFSimulation(sim_name=gwfname, sim_ws=sim_ws, exe_name='mf6')
+    sim = flopy.mf6.MFSimulation(sim_name=gwfname, sim_ws=sim_ws, exe_name='./bin/mf6.exe')
     
     # 创建时间离散化包
     # 对于非稳态模拟，需要确保时间步长有效

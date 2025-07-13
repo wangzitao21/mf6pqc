@@ -6,9 +6,11 @@ import matplotlib.pyplot as plt
 import time
 import modflowapi
 
-from scr.mf6pqc import mf6pqc
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
+from mf6pqc.mf6pqc import mf6pqc
 
-from modflow_models.modflow_model_5 import create_and_run_models
+from modflow_model import create_and_run_models
 
 ic_mapping = {
     'solution': 0,   # 所有单元格使用 SOLUTION 0
@@ -29,10 +31,13 @@ sim_params = {
     "componentH2O": False,
     "solution_density_volume": False,
 
-    "db_path": "./input_data/PHT3D_CASE_5/phreeqc.dat", 
-    "pqi_path": "./input_data/PHT3D_CASE_5/phreeqc.pqi",
-    "modflow_dll_path": f"C:\\ProgramFiles\\MODFLOW\\libmf6.dll",
-    "workspace": './simulation/PHT3D_CASE_5'
+    "db_path": "./examples/example2/input_data/phreeqc.dat", 
+    "pqi_path": "./examples/example2/input_data/phreeqc.pqi",
+    "modflow_dll_path": "./bin/libmf6.dll",
+    "workspace": './examples/example2/simulation',
+    "output_dir": "./examples/example2/output",
+
+    "if_update_porosity_K": False
 }
 
 simulator = mf6pqc(**sim_params)

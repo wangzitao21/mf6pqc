@@ -20,7 +20,7 @@ sim_params = {
     "nthreads": 6,
     "temperature": 25.0,
     "pressure": 2.0,
-    "porosity": 0.35,
+    "porosity": 0.32,
     "saturation": 1.0,
     "density": 1.0,
     "print_chemistry_mask": 1,
@@ -29,7 +29,7 @@ sim_params = {
 
     "db_path": "./examples/example1/input_data/phreeqc.dat", 
     "pqi_path": "./examples/example1/input_data/phreeqc.pqi",
-    "modflow_dll_path": f"C:\\ProgramFiles\\MODFLOW\\libmf6.dll",
+    "modflow_dll_path": "./bin/libmf6.dll",
     "workspace": './examples/example1/simulation',
     "output_dir": "./examples/example1/output",
 

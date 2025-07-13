@@ -1,14 +1,13 @@
 import os
 import sys
-import phreeqcrm
 import numpy as np
 import matplotlib.pyplot as plt
-import time
-import modflowapi
 
-from scr.mf6pqc import mf6pqc
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
+from mf6pqc.mf6pqc import mf6pqc
 
-from modflow_models.modflow_model_3 import create_and_run_models
+from modflow_model import create_and_run_models
 
 ic_mapping = {
     'solution':           0,   # 所有单元格使用 SOLUTION 0
@@ -29,12 +28,13 @@ sim_params = {
     "componentH2O": False,
     "solution_density_volume": False,
 
-    "db_path": "./input_data/PHT3D_CASE_3/phreeqc.dat", 
-    "pqi_path": "./input_data/PHT3D_CASE_3/phreeqc.pqi",
-    "modflow_dll_path": f"C:\\ProgramFiles\\MODFLOW\\libmf6.dll",
-    "workspace": './simulation/PHT3D_CASE_3',
+    "db_path": "./examples/example2/input_data/phreeqc.dat", 
+    "pqi_path": "./examples/example2/input_data/phreeqc.pqi",
+    "modflow_dll_path": "./bin/libmf6.dll",
+    "workspace": './examples/example2/simulation',
+    "output_dir": "./examples/example2/output",
 
-    "if_update_porosity_K": False
+    "if_update_porosity_K": False,
 }
 
 simulator = mf6pqc(**sim_params)
@@ -44,7 +44,7 @@ bc_conc = simulator.get_initial_concentrations(1)
 components = simulator.get_components()
 
 create_and_run_models(
-    sim_ws='./simulation/PHT3D_CASE_3',
+    sim_ws='./examples/example2/simulation',
     species_list=components,
     initial_conc=initial_concentrations,
     bc=bc_conc,
