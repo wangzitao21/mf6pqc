@@ -51,6 +51,7 @@ create_and_run_models(
 
 simulator.run()
 simulator.save_results()
+
 simulator.finalize()
 
 print("\n-------------------------------------------")

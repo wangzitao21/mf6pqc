@@ -517,6 +517,10 @@ class mf6pqc:
             conc_var_info[sp_name] = {"address": address, "shape": shape}
             print(f"  - 已缓存溶质 '{sp_name}' 的信息, 形状: {shape}")
 
+        # ! 获取密度信息
+        gwt_density_name = "gwt_density"
+        density_address = self.modflow_api.get_var_address("X", gwt_density_name)
+
         # --- 核心优化：预分配结果数组 ---
         # 对于长时程模拟，需要您根据模型的TDIS文件（时间离散化）设置一个保守的
         # 时间步总数的上限。这避免了在循环中动态调整数组大小带来的巨大开销。
@@ -576,6 +580,11 @@ class mf6pqc:
                 updated_conc_slice = conc_after_reaction[self._get_species_slice(isp)]
                 updated_conc_arr = updated_conc_slice.reshape(var_info["shape"], order="C")
                 self.modflow_api.set_value(var_info["address"], updated_conc_arr)
+            
+            # --- 第四步：从 PHREEQC-RM 获取反应后的密度, 写回 MODFLOW 6---
+            density_after_reaction = self.phreeqc_rm.GetDensityCalculated() * 1000.0
+            print(density_after_reaction.mean())
+            self.modflow_api.set_value(density_address, density_after_reaction)
 
             # --- 第五步：使用预分配数组收集结果 ---
             # PhreeqcRM 返回一个新数组，我们将其整形后存入预分配数组的正确位置
@@ -585,7 +594,7 @@ class mf6pqc:
             
             # 必须更新 self.selected_output，因为 _update_porosity 方法依赖它
             self.selected_output = self.results[time_step_index + 1]
-
+            
             # --- 第六步：更新孔隙度-渗透系数 ---
             if self.if_update_porosity_K:
                 old_porosity = self.porosity

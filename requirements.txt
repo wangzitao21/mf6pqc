@@ -1,8 +1,8 @@
-numpy
-pandas
-scipy
-matplotlib
-seaborn
-flopy
-modflowapi
-phreeqcrm
+numpy==1.24.4
+pandas==2.0.3
+scipy==1.11.2
+matplotlib==3.7.2
+seaborn==0.12.2
+flopy==3.4.3
+modflowapi==0.12.0
+phreeqcrm==3.7.3

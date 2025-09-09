@@ -1,0 +1,163 @@
+SOLUTION 0
+    units       mol/L
+    pH          6.819198
+    density     1.277466
+    Cl          8.012954 charge
+    K           0.443996
+    Na          0.383686
+    Ca          0.011044
+    Mg          3.636298
+    S(6)        0.051828
+    C(4)        0.000088
+END
+SOLUTION 1
+    pH          7.301126
+    density     1.202735
+    units       mol/L
+    Cl          5.477398 charge
+    K           0.000041
+    Na          5.477398
+    Ca          0.000031
+    Mg          0.000512
+    S(6)        0.069920
+    C(4)        0.000088
+END
+EQUILIBRIUM_PHASES 1
+    Halite      0.0    18.380
+    Carnallite  0.0    0.599
+    Polyhalite  0.0    0.376
+    Sylvite     0.0    0.0507
+    Gypsum      0.0    0.176
+    # Bischofite  0.0    0.00
+    # Syngenite   0.0    0.00
+END
+EQUILIBRIUM_PHASES 2
+    Halite      0.0    18.380
+    Carnallite  0.0    0.00
+    Polyhalite  0.0    0.00
+    Sylvite     0.0    0.00
+    Gypsum      0.0    0.00
+    # Bischofite  0.0    0.00
+    # Syngenite   0.0    0.00
+END
+EXCHANGE 1
+    -equilibrate with solution 0
+    X 0.00114
+END
+# KINETICS 1
+# Halite
+#     -m0  77.00
+#     -parms  1.0e-4
+# Carnallite
+#     -m0  1.78
+#     -parms  1.2e-4
+# Sylvite
+#     -m0  0.66
+#     -parms  1.2e-4
+#预定时间可以不要？
+#steps  36.5 days
+# INCREMENTAL_REACTIONS true
+# END
+# RATES 1
+# Halite
+#     -start
+#     10 k0 = PARM(1)
+#     20 IF M0 <= 0 THEN M0 = 1E-20
+#     30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+#     80 moles = k_t * (1 - SR("Halite")) * TIME
+#     100 IF moles > 0 AND moles > M THEN moles = M
+#     110 SAVE moles
+#     -end
+# Carnallite
+#     -start
+#     10 k0 = PARM(1)
+#     20 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+#     80 moles = k_t * (1 - SR("Carnallite")) * TIME
+#     100 IF moles > 0 AND moles > M THEN moles = M
+#     110 SAVE moles
+#     -end
+#     Sylvite
+#     -start
+#     10 k0 = PARM(1)
+#     20 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+#     80 moles = k_t * (1 - SR("Sylvite")) * TIME
+#     100 IF moles > 0 AND moles > M THEN moles = M
+#     110 SAVE moles
+#     -end
+# END
+# USER_PUNCH 1
+#     -headings K Na Ca Mg Li Cl S(6) C(4) Halite Carnallite Polyhalite Sylvite Gypsum Bischofite Syngenite d_Halite d_Carnallite d_Polyhalite d_Sylvite d_Gypsum d_Bischofite d_Syngenite density(g/L) SI_Halite SI_Carnallite SI_Polyhalite SI_Sylvite SI_Gypsum SI_Bischofite SI_Syngenite
+#     -start
+#     20 PUNCH TOT("K")    * TOT("water") / SOLN_VOL
+#     30 PUNCH TOT("Na")   * TOT("water") / SOLN_VOL
+#     40 PUNCH TOT("Ca")   * TOT("water") / SOLN_VOL
+#     50 PUNCH TOT("Mg")   * TOT("water") / SOLN_VOL
+#     60 PUNCH TOT("Li")   * TOT("water") / SOLN_VOL
+#     70 PUNCH TOT("Cl")   * TOT("water") / SOLN_VOL
+#     80 PUNCH TOT("S(6)") * TOT("water") / SOLN_VOL
+#     90 PUNCH TOT("C(4)") * TOT("water") / SOLN_VOL
+#     100 PUNCH EQUI("Halite")
+#     110 PUNCH EQUI("Carnallite")
+#     120 PUNCH EQUI("Polyhalite")
+#     130 PUNCH EQUI("Sylvite")
+#     140 PUNCH EQUI("Gypsum")
+#     150 PUNCH EQUI("Bischofite")
+#     160 PUNCH EQUI("Syngenite")
+#     170 PUNCH EQUI_DELTA("Halite")
+#     180 PUNCH EQUI_DELTA("Carnallite")
+#     190 PUNCH EQUI_DELTA("Polyhalite")
+#     200 PUNCH EQUI_DELTA("Sylvite")
+#     210 PUNCH EQUI_DELTA("Gypsum")
+#     220 PUNCH EQUI_DELTA("Bischofite")
+#     230 PUNCH EQUI_DELTA("Syngenite")
+#     240 PUNCH RHO
+#     250 PUNCH SI("Halite")
+#     260 PUNCH SI("Carnallite")
+#     270 PUNCH SI("Polyhalite")
+#     280 PUNCH SI("Sylvite")
+#     290 PUNCH SI("Gypsum")
+#     300 PUNCH SI("Bischofite")
+#     310 PUNCH SI("Syngenite")
+# END
+USER_PUNCH 1
+    -headings K Na Ca Mg Li Cl S(6) C(4) Halite Carnallite Polyhalite Sylvite Gypsum d_Halite d_Carnallite d_Polyhalite d_Sylvite d_Gypsum density(g/L)
+    -start
+    20 PUNCH TOT("K")    * TOT("water") / SOLN_VOL
+    30 PUNCH TOT("Na")   * TOT("water") / SOLN_VOL
+    40 PUNCH TOT("Ca")   * TOT("water") / SOLN_VOL
+    50 PUNCH TOT("Mg")   * TOT("water") / SOLN_VOL
+    60 PUNCH TOT("Li")   * TOT("water") / SOLN_VOL
+    70 PUNCH TOT("Cl")   * TOT("water") / SOLN_VOL
+    80 PUNCH TOT("S(6)") * TOT("water") / SOLN_VOL
+    90 PUNCH TOT("C(4)") * TOT("water") / SOLN_VOL
+    100 PUNCH EQUI("Halite")
+    110 PUNCH EQUI("Carnallite")
+    120 PUNCH EQUI("Polyhalite")
+    130 PUNCH EQUI("Sylvite")
+    140 PUNCH EQUI("Gypsum")
+    170 PUNCH EQUI_DELTA("Halite")
+    180 PUNCH EQUI_DELTA("Carnallite")
+    190 PUNCH EQUI_DELTA("Polyhalite")
+    200 PUNCH EQUI_DELTA("Sylvite")
+    210 PUNCH EQUI_DELTA("Gypsum")
+    240 PUNCH RHO
+END
+SELECTED_OUTPUT 1
+    -step flase
+    -high_precision false
+    -water false
+    soln false
+    pH false
+    sim false
+    state false
+    time false
+    pe false
+    distance false
+END
+KNOBS 1
+    -iterations      400
+    -step_size       10
+    -pe_step_size    1
+    -diagonal_scale  true
+    -tolerance       1e-10
+END
