@@ -65,7 +65,6 @@ def create_and_run_models(
     else:
         gwfname = f"gwf_{sim_name}"
     
-    # 网格参数
     nrow = 1
     ncol = 50
     nlay = 1
@@ -75,16 +74,13 @@ def create_and_run_models(
     botm = 0.0            # 底部高程
     hk = 1.0              # 水平渗透系数
     
-    # 时间离散化参数
     nper = 1
     perlen = np.array([perlen])
     nstp = [nstp]
     steady = [steady]
     
-    # 创建MODFLOW 6模拟
     sim = flopy.mf6.MFSimulation(sim_name=gwfname, sim_ws=sim_ws, exe_name='./bin/mf6.exe')
     
-    # 创建时间离散化包
     # 对于非稳态模拟，需要确保时间步长有效
     if not steady[0]:
         # 添加时间步乘数参数
@@ -104,10 +100,8 @@ def create_and_run_models(
             perioddata=[(perlen[0], nstp[0], steady[0])]
         )
     
-    # 创建地下水流模型
     gwf = flopy.mf6.ModflowGwf(sim, modelname=gwfname, save_flows=True)
     
-    # 创建迭代控制包
     ic = flopy.mf6.ModflowIms(
         sim,
         pname='ims',
@@ -123,10 +117,8 @@ def create_and_run_models(
         reordering_method='NONE',
         relaxation_factor=0.97
     )
-    # 将IMS包分配给地下水流模型
     sim.register_ims_package(ic, [gwf.name])
     
-    # 创建离散化包
     dis = flopy.mf6.ModflowGwfdis(
         gwf,
         pname='dis',
@@ -139,10 +131,8 @@ def create_and_run_models(
         botm=botm
     )
     
-    # 创建初始条件包
     ic = flopy.mf6.ModflowGwfic(gwf, pname='ic', strt=1.0)
     
-    # 创建节点属性包
     npf = flopy.mf6.ModflowGwfnpf(
         gwf,
         pname='npf',
@@ -151,10 +141,8 @@ def create_and_run_models(
         k=hk
     )
     
-    # 创建存储包
     sto = flopy.mf6.ModflowGwfsto(gwf, pname='sto', save_flows=True, iconvert=1, ss=0.0, sy=0.0) # ss=1.0e-5, sy=0.1
     
-    # 创建常水头边界包
     chd_spd = [[(0, 0, ncol-1), 1.0]]
     chd = flopy.mf6.ModflowGwfchd(
         gwf,
@@ -164,7 +152,6 @@ def create_and_run_models(
         stress_period_data={0: chd_spd}
     )
     
-    # 创建井包 - 包含四种溶质的辅助变量（pH不作为可传输溶质）
     wel_spd = [[(0, 0, 0), 0.259061, *bc]]
     wel = flopy.mf6.ModflowGwfwel(
         gwf,
@@ -174,8 +161,7 @@ def create_and_run_models(
         stress_period_data={0: wel_spd},
         auxiliary=['H', 'O', 'Charge', 'C', 'Ca', 'Cl', 'Mg']
     )
-    # 'H', 'O', 'Charge', 'C', 'Ca', 'Cl', 'Mg'
-    # 创建输出控制包
+
     oc = flopy.mf6.ModflowGwfoc(
         gwf,
         pname='oc',
@@ -184,8 +170,7 @@ def create_and_run_models(
         saverecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')],
         printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
     )
-    
-    # 溶质初始浓度 - pH不作为溶质传输
+
     if initial_conc is None:
         species_conc = {
             'H': 1.10684408e+02,
@@ -210,17 +195,13 @@ def create_and_run_models(
         alh = 0.0067    # 纵向弥散度
         # 使用 ath1, ath2, atv 设置横向弥散系数
         ath1 =  0.00067
-        # 设置分子扩散系数
-        diffc = 0.0
+        diffc = 0.0 # 分子扩散系数
         
-        # 创建溶质传输模型名称
         gwtname = f"gwt_{species_name}_{sim.name.split('_')[1]}"
         
-        # 创建溶质传输模型
         gwt = flopy.mf6.ModflowGwt(sim, modelname=gwtname, save_flows=True, 
                                   model_nam_file=f"{gwtname}.nam")
         
-        # 创建迭代控制包
         imsgwt = flopy.mf6.ModflowIms(
             sim, 
             print_option="SUMMARY", 
@@ -238,7 +219,6 @@ def create_and_run_models(
         )
         sim.register_ims_package(imsgwt, [gwt.name])
         
-        # 创建离散化包
         flopy.mf6.ModflowGwtdis(
             gwt, 
             nlay=gwf.dis.nlay.get_data(), 
@@ -258,10 +238,8 @@ def create_and_run_models(
         else:
             flopy.mf6.ModflowGwtic(gwt, strt=species_initial_conc, filename=f"{gwtname}.ic")
         
-        # 创建平流包
         flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwtname}.adv")
         
-        # 创建弥散包
         flopy.mf6.ModflowGwtdsp(
             gwt, 
             xt3d_off=True, 
@@ -271,10 +249,8 @@ def create_and_run_models(
             filename=f"{gwtname}.dsp"
         )
 
-        # 创建质量存储包
         flopy.mf6.ModflowGwtmst(gwt, porosity=porosity, filename=f"{gwtname}.mst")
-        
-        # 创建源汇包
+
         sourcerecarray = [("WEL-1", "AUX", species_name)]
         flopy.mf6.ModflowGwtssm(
             gwt, 
@@ -282,7 +258,6 @@ def create_and_run_models(
             filename=f"{gwtname}.ssm"
         )
         
-        # 创建输出控制包
         flopy.mf6.ModflowGwtoc(
             gwt, 
             budget_filerecord=f"{gwtname}.cbc", 
@@ -290,7 +265,6 @@ def create_and_run_models(
             saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")]
         )
         
-        # 创建GWF-GWT交换包
         flopy.mf6.ModflowGwfgwt(
             sim, 
             exgtype="GWF6-GWT6", 

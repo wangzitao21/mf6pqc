@@ -9,6 +9,9 @@ from mf6pqc.mf6pqc import mf6pqc
 
 from modflow_model import create_and_run_models
 
+# todo 案例目录
+example_dir = './examples/example1'
+
 ic_mapping = {
     'solution':           0,   # SOLUTION 0
     'equilibrium_phases': 1,   # EQUILIBRIUM_PHASES 1
@@ -27,11 +30,11 @@ sim_params = {
     "componentH2O": False,
     "solution_density_volume": False,
 
-    "db_path": "./examples/example1/input_data/phreeqc.dat", 
-    "pqi_path": "./examples/example1/input_data/phreeqc.pqi",
+    "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
+    "pqi_path": os.path.join(example_dir, "input_data/phreeqc.pqi"),
     "modflow_dll_path": "./bin/libmf6.dll",
-    "workspace": './examples/example1/simulation',
-    "output_dir": "./examples/example1/output",
+    "workspace": os.path.join(example_dir, "simulation"),
+    "output_dir": os.path.join(example_dir, "output"),
 
     "if_update_porosity_K": False
 }
@@ -43,7 +46,7 @@ bc_conc = simulator.get_initial_concentrations(1)
 components = simulator.get_components()
 
 create_and_run_models(
-    sim_ws='./examples/example1/simulation',
+    sim_ws=os.path.join(example_dir, 'simulation'),
     species_list=components,
     initial_conc=initial_concentrations,
     bc=bc_conc,

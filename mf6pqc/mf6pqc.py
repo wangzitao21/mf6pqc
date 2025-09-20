@@ -7,6 +7,7 @@ import numpy as np
 # import matplotlib.pyplot as plt
 import phreeqcrm
 import modflowapi
+from xmipy.errors import XMIError
 
 from pathlib import Path
 
@@ -51,6 +52,7 @@ class mf6pqc:
         output_dir: str = "output",
         workspace: str = "./simulation",
         if_update_porosity_K: bool = False,
+        if_update_density:    bool = False,
     ):
         """
         初始化模拟器, 接收定义一个案例所需的所有配置。
@@ -106,6 +108,7 @@ class mf6pqc:
 
         self.is_setup = False
         self.if_update_porosity_K = if_update_porosity_K
+        self.if_update_density = if_update_density
         
         # 存储变量
         self.results = []
@@ -518,8 +521,16 @@ class mf6pqc:
             print(f"  - 已缓存溶质 '{sp_name}' 的信息, 形状: {shape}")
 
         # ! 获取密度信息
-        gwt_density_name = "gwt_density"
-        density_address = self.modflow_api.get_var_address("X", gwt_density_name)
+        density_address = None # 初始化为 None
+        if self.if_update_density:
+            gwt_density_name = "gwt_density"
+            try:
+                density_address = self.modflow_api.get_var_address("X", gwt_density_name)
+                print(f"  - 已缓存密度 '{gwt_density_name}/X' 的信息")
+            except XMIError:
+                print(f"警告: if_update_density=True, 但在MODFLOW模型中找不到变量 'X at {gwt_density_name}'。")
+                print("密度将不会被更新。")
+                self.if_update_density = False # 自动关闭开关，防止后续循环中出错
 
         # --- 核心优化：预分配结果数组 ---
         # 对于长时程模拟，需要您根据模型的TDIS文件（时间离散化）设置一个保守的
@@ -582,9 +593,13 @@ class mf6pqc:
                 self.modflow_api.set_value(var_info["address"], updated_conc_arr)
             
             # --- 第四步：从 PHREEQC-RM 获取反应后的密度, 写回 MODFLOW 6---
-            density_after_reaction = self.phreeqc_rm.GetDensityCalculated() * 1000.0
-            print(density_after_reaction.mean())
-            self.modflow_api.set_value(density_address, density_after_reaction)
+            # --- 修改部分开始 ---
+            # 只有在开关打开且地址有效时，才执行密度更新
+            if self.if_update_density and density_address is not None:
+                density_after_reaction = self.phreeqc_rm.GetDensityCalculated() * 1000.0
+                print(f"更新密度，平均值: {density_after_reaction.mean():.4f}")
+                self.modflow_api.set_value(density_address, density_after_reaction)
+            # --- 修改部分结束 ---
 
             # --- 第五步：使用预分配数组收集结果 ---
             # PhreeqcRM 返回一个新数组，我们将其整形后存入预分配数组的正确位置

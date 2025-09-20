@@ -1,14 +1,13 @@
 import os
 import sys
-import phreeqcrm
 import numpy as np
 import matplotlib.pyplot as plt
-import time
-import modflowapi
 
-from scr.mf6pqc import mf6pqc
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from modflow_models.modflow_model_6 import create_and_run_models
+from mf6pqc.mf6pqc import mf6pqc
+
+from modflow_model import create_and_run_models
 
 ic_mapping = {
     'solution': 0,
