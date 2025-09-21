@@ -32,10 +32,10 @@ sim_params = {
     "solution_density_volume": False,
 
     "db_path": os.path.join(example_dir, "input_data/pitzer.dat"),
-    "pqi_path": os.path.join(example_dir, "input_data/input1.pqi"),
+    "pqi_path": os.path.join(example_dir, "input_data/input.pqi"),
     "modflow_dll_path": "./bin/libmf6.dll",
     "workspace": os.path.join(example_dir, "simulation"),
-    "output_dir": os.path.join(example_dir, "output"),
+    "output_dir": os.path.join(example_dir, "output/B"),
 
     "if_update_porosity_K": True,
     "if_update_density": True

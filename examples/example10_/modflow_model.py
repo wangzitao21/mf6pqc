@@ -8,7 +8,7 @@ def transport_model(
     sim_ws="",
     species_list=["Ca", "Mg", "Cl"],
     perlen=1825,
-    nstp=60,
+    nstp=180,
     initial_conc=np.ones(120000) * 0.05,
     bc=[0.1, 0.1, 0.1],
     porosity=0.30,
@@ -292,7 +292,7 @@ def transport_model(
 # ! ######################### 写入和运行模型 ######################### ! #
 
     sim.write_simulation(silent=False)
-    sim.run_simulation(silent=False, report=True)
+    # sim.run_simulation(silent=False, report=True)
 
 # ! ######################### 读取和输出结果 ######################### ! #
 

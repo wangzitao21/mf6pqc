@@ -23,37 +23,37 @@ SOLUTION 1
     C(4)        0.000088
 END
 EQUILIBRIUM_PHASES 1
-#    Halite      0.0    8.116702
-#    Carnallite  0.0    1.595673
-    Polyhalite  0.0    2.201786
-    # Sylvite     0.0    2.580788
-    Gypsum      0.0    6.446613
- #   Calcite     0.0    0.000000
- #   Dolomite    0.0    1.590009
+    Halite      0.0    77.00
+    Carnallite  0.0    1.78
+    Polyhalite  0.0    2.70
+    Sylvite     0.0    0.66
+    Gypsum      0.0    4.39
+#   Calcite     0.0    0.00
+#   Dolomite    0.0    1.59
 END
 EXCHANGE 1
     -equilibrate with solution 0
     X 1.0
 END
-KINETICS 1
-Halite
-    -m0  8.116702
-    -parms  1.0e-4
-Carnallite
-    -m0  1.595673
-    -parms  1.2e-4
-Sylvite
-    -m0  2.580788
-    -parms  1.2e-4
-#预定时间可以不要？
+# KINETICS 1
+# Halite
+#     -m0  77.00
+#     -parms  1.0e-4
+# Carnallite
+#     -m0  1.78
+#     -parms  1.2e-4
+# Sylvite
+#     -m0  0.66
+#     -parms  1.2e-4
 #steps  36.5 days
-INCREMENTAL_REACTIONS true
-END
+# INCREMENTAL_REACTIONS true
+# END
 RATES 1
 Halite
     -start
     10 k0 = PARM(1)
-    20 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+    20 IF M0 <= 0 THEN M0 = 1E-20
+    30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
     80 moles = k_t * (1 - SR("Halite")) * TIME
     100 IF moles > 0 AND moles > M THEN moles = M
     110 SAVE moles
@@ -86,17 +86,17 @@ USER_PUNCH 1
     70 PUNCH TOT("Cl")   * TOT("water") / SOLN_VOL
     80 PUNCH TOT("S(6)") * TOT("water") / SOLN_VOL
     90 PUNCH TOT("C(4)") * TOT("water") / SOLN_VOL
-    100 PUNCH KIN("Halite")
-    110 PUNCH KIN("Carnallite")
+    100 PUNCH EQUI("Halite")
+    110 PUNCH EQUI("Carnallite")
     120 PUNCH EQUI("Polyhalite")
-    130 PUNCH KIN("Sylvite")
+    130 PUNCH EQUI("Sylvite")
     140 PUNCH EQUI("Gypsum")
     150 PUNCH EQUI("Calcite")
     160 PUNCH EQUI("Dolomite")
-    170 PUNCH KIN_DELTA("Halite")
-    180 PUNCH KIN_DELTA("Carnallite")
+    170 PUNCH EQUI_DELTA("Halite")
+    180 PUNCH EQUI_DELTA("Carnallite")
     190 PUNCH EQUI_DELTA("Polyhalite")
-    200 PUNCH KIN_DELTA("Sylvite")
+    200 PUNCH EQUI_DELTA("Sylvite")
     210 PUNCH EQUI_DELTA("Gypsum")
     220 PUNCH EQUI_DELTA("Calcite")
     230 PUNCH EQUI_DELTA("Dolomite")
