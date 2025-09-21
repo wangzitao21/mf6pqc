@@ -1,8 +1,9 @@
 __pycache__/
 *.pyc
 
+.vscode/
+
 /bin/
 /trash/
 /examples/*/simulation/
 /examples/*/output/
-/.vscode/
