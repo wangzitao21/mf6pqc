@@ -1,7 +1,7 @@
 import numpy as np
 import flopy
 
-def create_and_run_models(
+def transport_model(
     sim_ws='./simulation/PHT3D_CASE_3',
     perlen=24, 
     nstp=192, 
@@ -23,21 +23,16 @@ def create_and_run_models(
     """
     sim_name = 'model'
     
-    # 网格参数
     nrow = 1
     ncol = 80
     nlay = 1
+    delr = [0.005] * ncol
+    delc = [1.0]
+    top = 1.0
+    botm = 0.0
+    hk = 0.056
     
-    # 溶质列表
-    # species_list = ['H', 'O', 'Charge', 'Al', 'C', 'Ca', 'Cl', 'Fe', 'K', 'Mg', 'Mn', 'Na', 'S', 'Si']
-    
-    # 如果initial_conc是一维数组，将其转换为字典格式
     if initial_conc is not None and not isinstance(initial_conc, dict):
-        # 检查维度是否正确 (7个溶质 * 50个网格)
-        if len(initial_conc) != len(species_list) * ncol:
-            raise ValueError(f"初始浓度数组维度应为{len(species_list) * ncol}，但得到{len(initial_conc)}")
-        
-        # 将一维数组转换为字典
         conc_dict = {}
         for i, species in enumerate(species_list):
             # 提取每个溶质的浓度值
@@ -48,32 +43,7 @@ def create_and_run_models(
 
     steady = True
 
-    # 模型名称 - 确保不超过16个字符
-    # 截取sim_name以确保总长度不超过16个字符
-    if len(f"gwf_{sim_name}") > 16:
-        # 如果sim_name包含step，提取步骤号并使用简短格式
-        if "step" in sim_name:
-            step_num = sim_name.split("step")[1]
-            gwfname = f"gwf_s{step_num}"
-            # 再次检查长度
-            if len(gwfname) > 16:
-                # 如果仍然太长，使用更简短的格式
-                gwfname = f"g{step_num}"
-        else:
-            # 如果没有step，简单截断
-            gwfname = f"gwf_{sim_name[:10]}"
-    else:
-        gwfname = f"gwf_{sim_name}"
-    
-    # 网格参数
-    nrow = 1
-    ncol = 80
-    nlay = 1
-    delr = [0.005] * ncol  # 列方向网格大小
-    delc = [1.0]          # 行方向网格大小
-    top = 1.0             # 顶部高程
-    botm = 0.0            # 底部高程
-    hk = 0.056            # 水平渗透系数
+    gwfname = f"gwf_{sim_name}"
     
     # 时间离散化参数
     nper = 1
@@ -84,30 +54,16 @@ def create_and_run_models(
     # 创建MODFLOW 6模拟
     sim = flopy.mf6.MFSimulation(sim_name=gwfname, sim_ws=sim_ws, exe_name='mf6')
     
-    # 创建时间离散化包
-    # 对于非稳态模拟，需要确保时间步长有效
-    if not steady[0]:
-        # 添加时间步乘数参数
-        tdis = flopy.mf6.ModflowTdis(
-            sim,
-            pname='tdis',
-            time_units='DAYS',
-            nper=nper,
-            perioddata=[(perlen[0], nstp[0], 1.0)]  # 第三个参数是tsmult
-        )
-    else:
-        tdis = flopy.mf6.ModflowTdis(
-            sim,
-            pname='tdis',
-            time_units='DAYS',
-            nper=nper,
-            perioddata=[(perlen[0], nstp[0], steady[0])]
-        )
+    tdis = flopy.mf6.ModflowTdis(
+        sim,
+        pname='tdis',
+        time_units='DAYS',
+        nper=nper,
+        perioddata=[(perlen[0], nstp[0], 1.0)]  # 第三个参数是tsmult
+    )
     
-    # 创建地下水流模型
     gwf = flopy.mf6.ModflowGwf(sim, modelname=gwfname, save_flows=True)
     
-    # 创建迭代控制包
     ic = flopy.mf6.ModflowIms(
         sim,
         pname='ims',
@@ -123,10 +79,8 @@ def create_and_run_models(
         reordering_method='NONE',
         relaxation_factor=0.97
     )
-    # 将IMS包分配给地下水流模型
     sim.register_ims_package(ic, [gwf.name])
     
-    # 创建离散化包
     dis = flopy.mf6.ModflowGwfdis(
         gwf,
         pname='dis',
@@ -185,30 +139,9 @@ def create_and_run_models(
         printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
     )
     
-    # 溶质初始浓度 - pH不作为溶质传输
-    if initial_conc is None:
-        species_conc = {
-            'H': 1.10684408e+02,
-            'O': 5.53425721e+01,
-            'Charge': -3.27498725e-14,
-            'Al': 0.000000127,
-            'C': 0.00394,
-            'Ca': 0.00692,
-            'Cl': 0.00103,
-            'Fe': 0.00005392,
-            'K': 0.0000665,
-            'Mg': 0.00196,
-            'Mn': 0.0000473,
-            'Na': 0.00130,
-            'S': 0.00748,
-            'Si': 0.00194
-        }
-    else:
-        species_conc = initial_conc.copy()
-    
     # 创建各溶质传输模型
     gwt_models = {}
-    for species_name, species_initial_conc in species_conc.items():
+    for species_name, species_initial_conc in initial_conc.items():
         # 溶质传输模型通用参数
         nouter, ninner = 50, 100
         hclose, rclose, relax = 1e-6, 1e-6, 1.0
@@ -220,14 +153,11 @@ def create_and_run_models(
         # 设置分子扩散系数
         diffc = 0.0
         
-        # 创建溶质传输模型名称
         gwtname = f"gwt_{species_name}_{sim.name.split('_')[1]}"
         
-        # 创建溶质传输模型
         gwt = flopy.mf6.ModflowGwt(sim, modelname=gwtname, save_flows=True, 
                                   model_nam_file=f"{gwtname}.nam")
         
-        # 创建迭代控制包
         imsgwt = flopy.mf6.ModflowIms(
             sim, 
             print_option="SUMMARY", 
@@ -245,7 +175,6 @@ def create_and_run_models(
         )
         sim.register_ims_package(imsgwt, [gwt.name])
         
-        # 创建离散化包
         flopy.mf6.ModflowGwtdis(
             gwt, 
             nlay=gwf.dis.nlay.get_data(), 
@@ -259,16 +188,13 @@ def create_and_run_models(
             filename=f"{gwtname}.dis"
         )
         
-        # 创建初始条件包 - 如果是数组则直接使用，否则创建相同值的数组
         if isinstance(species_initial_conc, (list, np.ndarray)):
             flopy.mf6.ModflowGwtic(gwt, strt=species_initial_conc, filename=f"{gwtname}.ic")
         else:
             flopy.mf6.ModflowGwtic(gwt, strt=species_initial_conc, filename=f"{gwtname}.ic")
         
-        # 创建平流包
         flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwtname}.adv")
         
-        # 创建弥散包
         flopy.mf6.ModflowGwtdsp(
             gwt, 
             xt3d_off=True, 
@@ -278,10 +204,8 @@ def create_and_run_models(
             filename=f"{gwtname}.dsp"
         )
 
-        # 创建质量存储包
         flopy.mf6.ModflowGwtmst(gwt, porosity=porosity, filename=f"{gwtname}.mst")
         
-        # 创建源汇包
         sourcerecarray = [("WEL-1", "AUX", species_name)]
         flopy.mf6.ModflowGwtssm(
             gwt, 
@@ -289,7 +213,6 @@ def create_and_run_models(
             filename=f"{gwtname}.ssm"
         )
         
-        # 创建输出控制包
         flopy.mf6.ModflowGwtoc(
             gwt, 
             budget_filerecord=f"{gwtname}.cbc", 
@@ -297,7 +220,6 @@ def create_and_run_models(
             saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")]
         )
         
-        # 创建GWF-GWT交换包
         flopy.mf6.ModflowGwfgwt(
             sim, 
             exgtype="GWF6-GWT6", 
@@ -308,39 +230,38 @@ def create_and_run_models(
         
         gwt_models[species_name] = gwt
     
-    # 写入输入文件
     sim.write_simulation()
     
     # 运行模型
-    success = sim.run_simulation()
-    if not success:
-        raise Exception('MODFLOW 6 did not terminate normally.')
+    # success = sim.run_simulation()
+    # if not success:
+    #     raise Exception('MODFLOW 6 did not terminate normally.')
     
-    # 获取结果数据
-    head = gwf.oc.output.head().get_alldata()
-    concentration_data = []
-    species_names = []
+    # # 获取结果数据
+    # head = gwf.oc.output.head().get_alldata()
+    # concentration_data = []
+    # species_names = []
     
-    for species, gwt in gwt_models.items():
-        concentration_data.append(gwt.oc.output.concentration().get_alldata())
-        species_names.append(species)
+    # for species, gwt in gwt_models.items():
+    #     concentration_data.append(gwt.oc.output.concentration().get_alldata())
+    #     species_names.append(species)
     
-    # 如果输入是一维数组，则将结果转换回一维数组格式返回
-    if initial_conc is not None and not isinstance(initial_conc, dict):
-        # 获取最终的浓度数据
-        result_array = np.zeros(len(species_list) * ncol)
+    # # 如果输入是一维数组，则将结果转换回一维数组格式返回
+    # if initial_conc is not None and not isinstance(initial_conc, dict):
+    #     # 获取最终的浓度数据
+    #     result_array = np.zeros(len(species_list) * ncol)
         
-        # 将每个溶质的浓度数据填充到结果数组中
-        for i, species in enumerate(species_list):
-            # 获取该溶质的浓度数据
-            species_idx = species_names.index(species)
-            species_conc_data = concentration_data[species_idx][0][0][0]
+    #     # 将每个溶质的浓度数据填充到结果数组中
+    #     for i, species in enumerate(species_list):
+    #         # 获取该溶质的浓度数据
+    #         species_idx = species_names.index(species)
+    #         species_conc_data = concentration_data[species_idx][0][0][0]
             
-            # 填充到结果数组中
-            result_array[i * ncol:(i + 1) * ncol] = species_conc_data
+    #         # 填充到结果数组中
+    #         result_array[i * ncol:(i + 1) * ncol] = species_conc_data
         
-        return result_array
-    else:
-        # 如果输入是字典或None，返回原始格式的结果
-        # return concentration_data
-        return np.array(concentration_data).reshape(-1)
+    #     return result_array
+    # else:
+    #     # 如果输入是字典或None，返回原始格式的结果
+    #     # return concentration_data
+    #     return np.array(concentration_data).reshape(-1)

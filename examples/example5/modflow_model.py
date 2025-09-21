@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import flopy
 
-def create_and_run_models(
+def transport_model(
     sim_ws='./simulation/PHT3D_CASE_7',
     perlen=40, 
     nstp=120, 
@@ -296,38 +296,38 @@ def create_and_run_models(
     sim.write_simulation()
     
     # 运行模型
-    success = sim.run_simulation()
-    if not success:
-        raise Exception('MODFLOW 6 did not terminate normally.')
+    # success = sim.run_simulation()
+    # if not success:
+    #     raise Exception('MODFLOW 6 did not terminate normally.')
     
-    # 获取结果数据
-    head = gwf.oc.output.head().get_alldata()
-    # print(head.shape)
-    # plt.plot(head[0, 0, 0, :])
-    # plt.show()
-    concentration_data = []
-    species_names = []
+    # # 获取结果数据
+    # head = gwf.oc.output.head().get_alldata()
+    # # print(head.shape)
+    # # plt.plot(head[0, 0, 0, :])
+    # # plt.show()
+    # concentration_data = []
+    # species_names = []
     
-    for species, gwt in gwt_models.items():
-        concentration_data.append(gwt.oc.output.concentration().get_alldata())
-        species_names.append(species)
+    # for species, gwt in gwt_models.items():
+    #     concentration_data.append(gwt.oc.output.concentration().get_alldata())
+    #     species_names.append(species)
     
-    # 如果输入是一维数组，则将结果转换回一维数组格式返回
-    if initial_conc is not None and not isinstance(initial_conc, dict):
-        # 获取最终的浓度数据
-        result_array = np.zeros(len(species_list) * ncol)
+    # # 如果输入是一维数组，则将结果转换回一维数组格式返回
+    # if initial_conc is not None and not isinstance(initial_conc, dict):
+    #     # 获取最终的浓度数据
+    #     result_array = np.zeros(len(species_list) * ncol)
         
-        # 将每个溶质的浓度数据填充到结果数组中
-        for i, species in enumerate(species_list):
-            # 获取该溶质的浓度数据
-            species_idx = species_names.index(species)
-            species_conc_data = concentration_data[species_idx][0][0][0]
+    #     # 将每个溶质的浓度数据填充到结果数组中
+    #     for i, species in enumerate(species_list):
+    #         # 获取该溶质的浓度数据
+    #         species_idx = species_names.index(species)
+    #         species_conc_data = concentration_data[species_idx][0][0][0]
             
-            # 填充到结果数组中
-            result_array[i * ncol:(i + 1) * ncol] = species_conc_data
+    #         # 填充到结果数组中
+    #         result_array[i * ncol:(i + 1) * ncol] = species_conc_data
         
-        return result_array
-    else:
-        # 如果输入是字典或None，返回原始格式的结果
-        # return concentration_data
-        return np.array(concentration_data).reshape(-1)
+    #     return result_array
+    # else:
+    #     # 如果输入是字典或None，返回原始格式的结果
+    #     # return concentration_data
+    #     return np.array(concentration_data).reshape(-1)

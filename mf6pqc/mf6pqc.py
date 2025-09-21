@@ -54,26 +54,7 @@ class mf6pqc:
         if_update_porosity_K: bool = False,
         if_update_density:    bool = False,
     ):
-        """
-        初始化模拟器, 接收定义一个案例所需的所有配置。
-        
-        Args:
-            case_name (str): 案例名称, 用于文件和目录命名。
-            nxyz (int): 参与计算的单元格总数。
-            nthreads (int): PHREEQC-RM 使用的线程数。
-            temperature (ArrayLike): 初始温度 (摄氏度)。可以是标量或长度为 nxyz 的数组。
-            pressure (ArrayLike): 初始压力 (atm)。可以是标量或长度为 nxyz 的数组。
-            porosity (ArrayLike): 初始孔隙度。可以是标量或长度为 nxyz 的数组。
-            saturation (ArrayLike): 初始饱和度。可以是标量或长度为 nxyz 的数组。
-            density (ArrayLike): 初始密度 (kg/L)。可以是标量或长度为 nxyz 的数组。
-            print_chemistry_mask (ArrayLike): 列表掩码, 决定哪些单元格打印化学信息。
-            componentH2O (bool): 是否将 H2O 作为一个独立的传输组分。
-            solution_density_volume (bool): 是否使用 PHREEQC 计算的密度。
-            db_path (str): PHREEQC 数据库文件路径。
-            pqi_path (str): PHREEQC 输入定义文件路径。
-            modflow_dll_path (str): libmf6.dll 的路径。
-            workspace (str): MODFLOW 模型的工作目录。
-        """
+
         # --- 直接赋予配置 ---
         self.case_name = case_name
         self.nxyz = nxyz
@@ -411,9 +392,12 @@ class mf6pqc:
     def _get_species_slice(self, ispecies: int) -> slice:
         """返回第 ispecies 个溶质在一维浓度向量中的切片。"""
         return slice(ispecies * self.nxyz, (ispecies + 1) * self.nxyz)
+
+    # ! 预分配500时刻
     # def run(self):
     #     """
     #     执行耦合模拟的主循环。
+    #     此版本经过优化，使用内存预分配来提高性能。
     #     """
     #     self._initialize_modflow6()
     #     if not self.is_setup:
@@ -422,7 +406,7 @@ class mf6pqc:
     #     print("\n--- 开始反应-运移耦合模拟 ---")
     #     start_sim_time = time.time()
 
-    #     # --- 优化：在循环外缓存 MODFLOW 变量的地址和形状 ---
+    #     # --- 在循环外缓存 MODFLOW 变量的地址和形状 (保持原有优化) ---
     #     print("--- 正在缓存 MODFLOW 变量信息 (地址和形状) ---")
     #     conc_var_info = {}
     #     for sp_name in self.components:
@@ -432,21 +416,50 @@ class mf6pqc:
     #         conc_var_info[sp_name] = {"address": address, "shape": shape}
     #         print(f"  - 已缓存溶质 '{sp_name}' 的信息, 形状: {shape}")
 
+    #     # ! 获取密度信息
+    #     density_address = None # 初始化为 None
+    #     if self.if_update_density:
+    #         gwt_density_name = "gwt_density"
+    #         try:
+    #             density_address = self.modflow_api.get_var_address("X", gwt_density_name)
+    #             print(f"  - 已缓存密度 '{gwt_density_name}/X' 的信息")
+    #         except XMIError:
+    #             print(f"警告: if_update_density=True, 但在MODFLOW模型中找不到变量 'X at {gwt_density_name}'。")
+    #             print("密度将不会被更新。")
+    #             self.if_update_density = False # 自动关闭开关，防止后续循环中出错
+
+    #     # --- 核心优化：预分配结果数组 ---
+    #     num_timesteps_est = 500
+    #     print(f"--- 预分配内存，预估最大时间步数: {num_timesteps_est} ---")
+
+    #     # 预分配数组，注意维度中的 +1 是为了存储初始状态 (t=0)
+    #     self.results = np.empty((num_timesteps_est + 1, len(self.headings), self.nxyz), dtype=np.float64)
+    #     # 将 setup() 中计算的初始结果 (t=0) 存入数组的第一个位置
+    #     self.results[0] = self.selected_output 
+
     #     if self.if_update_porosity_K:
     #         K_tag = self.modflow_api.get_var_address("K11", "gwf_model", "NPF")
-    #         # 只在循环开始前读取一次初始 K 值
     #         self.K = self.modflow_api.get_value(K_tag)
     #         print(f"--- 已读取初始渗透系数 K, 形状: {self.K.shape} ---")
             
-    #         # 结果列表初始化 (将初始状态的拷贝存入，保证历史记录正确)
-    #         self.results_porosity.append(self.porosity.copy())
-    #         self.results_K.append(self.K.copy())
-
+    #         self.results_porosity = np.empty((num_timesteps_est + 1, self.nxyz), dtype=np.float64)
+    #         self.results_K = np.empty((num_timesteps_est + 1, *self.K.shape), dtype=np.float64)
+    #         # 存储初始状态
+    #         self.results_porosity[0] = self.porosity.copy()
+    #         self.results_K[0] = self.K.copy()
+        
     #     current_time = self.modflow_api.get_current_time()
     #     end_time = self.modflow_api.get_end_time()
         
+    #     time_step_index = 0
     #     while current_time < end_time:
-    #         # --- 第一步：更新 MODFLOW 到下一个时间步 (平流、弥散等) ---
+    #         # 安全检查，防止实际步数超出预分配空间
+    #         if time_step_index >= num_timesteps_est:
+    #             print(f"错误：实际时间步数 ({time_step_index}) 已达到预分配上限 ({num_timesteps_est})！")
+    #             print("模拟提前终止。请在 run() 方法中增大 num_timesteps_est 的值。")
+    #             break
+
+    #         # --- 第一步：更新 MODFLOW 到下一个时间步 ---
     #         dt = self.modflow_api.get_time_step()
     #         self.modflow_api.update()
     #         current_time = self.modflow_api.get_current_time()
@@ -471,16 +484,28 @@ class mf6pqc:
     #             updated_conc_slice = conc_after_reaction[self._get_species_slice(isp)]
     #             updated_conc_arr = updated_conc_slice.reshape(var_info["shape"], order="C")
     #             self.modflow_api.set_value(var_info["address"], updated_conc_arr)
+            
+    #         # --- 第四步：从 PHREEQC-RM 获取反应后的密度, 写回 MODFLOW 6---
+    #         # --- 修改部分开始 ---
+    #         # 只有在开关打开且地址有效时，才执行密度更新
+    #         if self.if_update_density and density_address is not None:
+    #             density_after_reaction = self.phreeqc_rm.GetDensityCalculated() * 1000.0
+    #             print(f"更新密度，平均值: {density_after_reaction.mean():.4f}")
+    #             self.modflow_api.set_value(density_address, density_after_reaction)
+    #         # --- 修改部分结束 ---
 
-    #         # --- 第五步：收集选择性输出结果 ---
-    #         # GetSelectedOutput 返回的是新创建的数组，所以这里不需要 .copy()
-    #         self.selected_output = self.phreeqc_rm.GetSelectedOutput().reshape(-1, self.nxyz)
-    #         self.results.append(self.selected_output)
-
+    #         # --- 第五步：使用预分配数组收集结果 ---
+    #         # PhreeqcRM 返回一个新数组，我们将其整形后存入预分配数组的正确位置
+    #         temp_selected_output = self.phreeqc_rm.GetSelectedOutput()
+    #         # 将当前步结果存入索引 time_step_index + 1 的位置
+    #         self.results[time_step_index + 1] = temp_selected_output.reshape(-1, self.nxyz)
+            
+    #         # 必须更新 self.selected_output，因为 _update_porosity 方法依赖它
+    #         self.selected_output = self.results[time_step_index + 1]
+            
     #         # --- 第六步：更新孔隙度-渗透系数 ---
     #         if self.if_update_porosity_K:
-
-    #             old_porosity = self.porosity  # 不再复制
+    #             old_porosity = self.porosity
     #             new_porosity = self._update_porosity()
     #             self._update_K(old_porosity, new_porosity)
 
@@ -489,19 +514,23 @@ class mf6pqc:
     #             self.phreeqc_rm.SetPorosity(self.porosity)
     #             self.modflow_api.set_value(K_tag, self.K)
 
-    #             # 保存当前步结果，需要深拷贝以保持历史
-    #             self.results_porosity.append(self.porosity.copy())
-    #             self.results_K.append(self.K.copy())
+    #             # 保存当前步结果到预分配数组
+    #             self.results_porosity[time_step_index + 1] = self.porosity
+    #             self.results_K[time_step_index + 1] = self.K
 
-    #         print(f"模拟时间: {current_time:.2f} / {end_time:.2f} 天")
+    #         time_step_index += 1
+    #         print(f"模拟时间: {current_time:.2f} / {end_time:.2f} 天 (步数: {time_step_index})")
          
+    #     # 记录实际运行的总步数，以便保存结果时使用
+    #     self.final_time_step_index = time_step_index
+
     #     end_sim_time = time.time()
     #     print(f"--- 模拟运行完成, 耗时 {end_sim_time - start_sim_time:.2f} 秒 ---")
 
     def run(self):
         """
         执行耦合模拟的主循环。
-        此版本经过优化，使用内存预分配来提高性能。
+        版本 2：使用 Python list 动态存储结果，最后再转成 numpy 数组。
         """
         self._initialize_modflow6()
         if not self.is_setup:
@@ -510,8 +539,7 @@ class mf6pqc:
         print("\n--- 开始反应-运移耦合模拟 ---")
         start_sim_time = time.time()
 
-        # --- 在循环外缓存 MODFLOW 变量的地址和形状 (保持原有优化) ---
-        print("--- 正在缓存 MODFLOW 变量信息 (地址和形状) ---")
+        # --- 缓存 MODFLOW 变量地址和形状 ---
         conc_var_info = {}
         for sp_name in self.components:
             gwt_model_name = f"gwt_{sp_name}_model"
@@ -521,7 +549,7 @@ class mf6pqc:
             print(f"  - 已缓存溶质 '{sp_name}' 的信息, 形状: {shape}")
 
         # ! 获取密度信息
-        density_address = None # 初始化为 None
+        density_address = None
         if self.if_update_density:
             gwt_density_name = "gwt_density"
             try:
@@ -529,49 +557,31 @@ class mf6pqc:
                 print(f"  - 已缓存密度 '{gwt_density_name}/X' 的信息")
             except XMIError:
                 print(f"警告: if_update_density=True, 但在MODFLOW模型中找不到变量 'X at {gwt_density_name}'。")
-                print("密度将不会被更新。")
-                self.if_update_density = False # 自动关闭开关，防止后续循环中出错
+                self.if_update_density = False 
 
-        # --- 核心优化：预分配结果数组 ---
-        # 对于长时程模拟，需要您根据模型的TDIS文件（时间离散化）设置一个保守的
-        # 时间步总数的上限。这避免了在循环中动态调整数组大小带来的巨大开销。
-        # 示例：假设您的模拟不会超过 5000 个时间步。
-        num_timesteps_est = 500
-        print(f"--- 预分配内存，预估最大时间步数: {num_timesteps_est} ---")
-
-        # 预分配数组，注意维度中的 +1 是为了存储初始状态 (t=0)
-        self.results = np.empty((num_timesteps_est + 1, len(self.headings), self.nxyz), dtype=np.float64)
-        # 将 setup() 中计算的初始结果 (t=0) 存入数组的第一个位置
-        self.results[0] = self.selected_output 
+        # --- 用 list 动态存储结果 ---
+        self.results = []
+        self.results.append(self.selected_output)  # 初始状态
 
         if self.if_update_porosity_K:
             K_tag = self.modflow_api.get_var_address("K11", "gwf_model", "NPF")
             self.K = self.modflow_api.get_value(K_tag)
             print(f"--- 已读取初始渗透系数 K, 形状: {self.K.shape} ---")
             
-            self.results_porosity = np.empty((num_timesteps_est + 1, self.nxyz), dtype=np.float64)
-            self.results_K = np.empty((num_timesteps_est + 1, *self.K.shape), dtype=np.float64)
-            # 存储初始状态
-            self.results_porosity[0] = self.porosity.copy()
-            self.results_K[0] = self.K.copy()
+            self.results_porosity = [self.porosity.copy()]
+            self.results_K = [self.K.copy()]
         
         current_time = self.modflow_api.get_current_time()
         end_time = self.modflow_api.get_end_time()
         
         time_step_index = 0
         while current_time < end_time:
-            # 安全检查，防止实际步数超出预分配空间
-            if time_step_index >= num_timesteps_est:
-                print(f"错误：实际时间步数 ({time_step_index}) 已达到预分配上限 ({num_timesteps_est})！")
-                print("模拟提前终止。请在 run() 方法中增大 num_timesteps_est 的值。")
-                break
-
-            # --- 第一步：更新 MODFLOW 到下一个时间步 ---
+            # --- 第一步：更新 MODFLOW ---
             dt = self.modflow_api.get_time_step()
             self.modflow_api.update()
             current_time = self.modflow_api.get_current_time()
             
-            # --- 第二步：从 MODFLOW 获取浓度, 交给 PHREEQC-RM ---
+            # --- 第二步：从 MODFLOW 获取浓度 ---
             conc_from_mf = np.empty(self.nxyz * self.ncomps, dtype=float)
             for isp, sp_name in enumerate(self.components):
                 var_info = conc_var_info[sp_name]
@@ -584,7 +594,7 @@ class mf6pqc:
             self.phreeqc_rm.SetTimeStep(dt)
             self.phreeqc_rm.RunCells()
             
-            # --- 第四步：从 PHREEQC-RM 获取反应后的浓度, 写回 MODFLOW ---
+            # --- 第四步：把反应后的浓度写回 MODFLOW ---
             conc_after_reaction = self.phreeqc_rm.GetConcentrations()
             for isp, sp_name in enumerate(self.components):
                 var_info = conc_var_info[sp_name]
@@ -592,47 +602,42 @@ class mf6pqc:
                 updated_conc_arr = updated_conc_slice.reshape(var_info["shape"], order="C")
                 self.modflow_api.set_value(var_info["address"], updated_conc_arr)
             
-            # --- 第四步：从 PHREEQC-RM 获取反应后的密度, 写回 MODFLOW 6---
-            # --- 修改部分开始 ---
-            # 只有在开关打开且地址有效时，才执行密度更新
+            # --- 可选：更新密度 ---
             if self.if_update_density and density_address is not None:
                 density_after_reaction = self.phreeqc_rm.GetDensityCalculated() * 1000.0
-                print(f"更新密度，平均值: {density_after_reaction.mean():.4f}")
                 self.modflow_api.set_value(density_address, density_after_reaction)
-            # --- 修改部分结束 ---
-
-            # --- 第五步：使用预分配数组收集结果 ---
-            # PhreeqcRM 返回一个新数组，我们将其整形后存入预分配数组的正确位置
+            
+            # --- 保存结果 ---
             temp_selected_output = self.phreeqc_rm.GetSelectedOutput()
-            # 将当前步结果存入索引 time_step_index + 1 的位置
-            self.results[time_step_index + 1] = temp_selected_output.reshape(-1, self.nxyz)
-            
-            # 必须更新 self.selected_output，因为 _update_porosity 方法依赖它
-            self.selected_output = self.results[time_step_index + 1]
-            
-            # --- 第六步：更新孔隙度-渗透系数 ---
+            self.selected_output = temp_selected_output.reshape(-1, self.nxyz)
+            self.results.append(self.selected_output)
+
+            # --- 更新孔隙度/渗透率 ---
             if self.if_update_porosity_K:
                 old_porosity = self.porosity
                 new_porosity = self._update_porosity()
                 self._update_K(old_porosity, new_porosity)
 
-                # 赋值并写入模型
                 self.porosity = new_porosity
                 self.phreeqc_rm.SetPorosity(self.porosity)
                 self.modflow_api.set_value(K_tag, self.K)
 
-                # 保存当前步结果到预分配数组
-                self.results_porosity[time_step_index + 1] = self.porosity
-                self.results_K[time_step_index + 1] = self.K
+                self.results_porosity.append(self.porosity.copy())
+                self.results_K.append(self.K.copy())
 
             time_step_index += 1
             print(f"模拟时间: {current_time:.2f} / {end_time:.2f} 天 (步数: {time_step_index})")
-         
-        # 记录实际运行的总步数，以便保存结果时使用
-        self.final_time_step_index = time_step_index
 
+        # --- 转换为 numpy 数组 ---
+        self.results = np.array(self.results)
+        if self.if_update_porosity_K:
+            self.results_porosity = np.array(self.results_porosity)
+            self.results_K = np.array(self.results_K)
+
+        self.final_time_step_index = time_step_index
         end_sim_time = time.time()
-        print(f"--- 模拟运行完成, 耗时 {end_sim_time - start_sim_time:.2f} 秒 ---")
+        print(f"--- 模拟运行完成, 总步数 {time_step_index}, 耗时 {end_sim_time - start_sim_time:.2f} 秒 ---")
+
 
     def save_results(self, filename: str = None):
         """
@@ -694,54 +699,6 @@ class mf6pqc:
             print("PHREEQC-RM 文件已关闭。")
 
         self.is_setup = False
-
-    # def save_results(self, filename: str = None):
-    #     """
-    #     将收集到的选择性输出结果以及孔隙度和渗透率结果保存到 .npy 文件中。
-
-    #     Args:
-    #         filename (str, optional): 保存结果的 .npy 文件名。如果为 None,
-    #                                   将使用 'case_name_results.npy'。
-    #     """
-    #     if not self.results:
-    #         print("警告：没有结果可保存。")
-    #         return
-
-    #     # 构建文件路径
-    #     if filename is None:
-    #         filename = os.path.join(self.output_dir, f"{self.case_name}_results.npy")
-    #     else:
-    #         filename = os.path.join(self.output_dir, filename)
-    #     base = os.path.splitext(filename)[0]
-
-    #     # 保存选择性输出结果
-    #     if self.headings:
-    #         num_vars = len(self.headings)
-    #         results_array = np.array(self.results).reshape(len(self.results), num_vars, self.nxyz)
-    #         np.save(filename, results_array)
-    #         print(f"结果已保存到: {filename}")
-
-    #         # 保存表头
-    #         header_file = base + "_headings.txt"
-    #         with open(header_file, 'w') as f:
-    #             for heading in self.headings:
-    #                 f.write(f"{heading}\n")
-    #         print(f"结果表头已保存到: {header_file}")
-
-    #         if self.if_update_porosity_K == True:
-    #             # 保存孔隙度结果
-    #             porosity_file = base + "_porosity.npy"
-    #             porosity_array = np.array(self.results_porosity)
-    #             np.save(porosity_file, porosity_array)
-    #             print(f"孔隙度结果已保存到: {porosity_file}")
-
-    #             # 保存渗透率结果
-    #             k_file = base + "_K.npy"
-    #             k_array = np.array(self.results_K)
-    #             np.save(k_file, k_array)
-    #             print(f"渗透率结果已保存到: {k_file}")
-    #     else:
-    #         print("错误：无法获取结果表头, 无法确定结果维度。")
 
     def get_components(self):
         return list(self.phreeqc_rm.GetComponents())

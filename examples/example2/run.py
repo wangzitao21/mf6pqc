@@ -3,11 +3,14 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(project_root)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 from mf6pqc.mf6pqc import mf6pqc
 
-from modflow_model import create_and_run_models
+from modflow_model import transport_model
+
+# todo 案例目录
+example_dir = './examples/example2'
 
 ic_mapping = {
     'solution':           0,   # 所有单元格使用 SOLUTION 0
@@ -28,13 +31,14 @@ sim_params = {
     "componentH2O": False,
     "solution_density_volume": False,
 
-    "db_path": "./examples/example2/input_data/phreeqc.dat", 
-    "pqi_path": "./examples/example2/input_data/phreeqc.pqi",
+    "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
+    "pqi_path": os.path.join(example_dir, "input_data/phreeqc.pqi"),
     "modflow_dll_path": "./bin/libmf6.dll",
-    "workspace": './examples/example2/simulation',
-    "output_dir": "./examples/example2/output",
+    "workspace": os.path.join(example_dir, "simulation"),
+    "output_dir": os.path.join(example_dir, "output"),
 
     "if_update_porosity_K": False,
+    "if_update_density": False
 }
 
 simulator = mf6pqc(**sim_params)
@@ -43,8 +47,8 @@ bc_conc = simulator.get_initial_concentrations(1)
 
 components = simulator.get_components()
 
-create_and_run_models(
-    sim_ws='./examples/example2/simulation',
+transport_model(
+    sim_ws=os.path.join(example_dir, 'simulation'),
     species_list=components,
     initial_conc=initial_concentrations,
     bc=bc_conc,

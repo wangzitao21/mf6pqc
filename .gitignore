@@ -1,4 +1,7 @@
-/bin/*
-/trash/*
+__pycache__/
+*.pyc
+
+/bin/
+/trash/
 /examples/*/simulation/
 /examples/*/output/
