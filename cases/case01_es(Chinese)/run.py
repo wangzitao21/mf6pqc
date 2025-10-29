@@ -10,7 +10,7 @@ from mf6pqc.mf6pqc import mf6pqc
 from modflow_model import transport_model
 
 # todo 案例目录
-example_dir = './examples/example10_'
+example_dir = './cases/case01_es(Chinese)'
 
 ic_mapping = {
     'solution':           0,   # SOLUTION 0
@@ -19,7 +19,7 @@ ic_mapping = {
 }
 
 sim_params = {
-    "case_name": "Example10",
+    "case_name": "case01_es(Chinese)",
     "nxyz": 100*400,
     "nthreads": 12,
     "temperature": 25.0,
