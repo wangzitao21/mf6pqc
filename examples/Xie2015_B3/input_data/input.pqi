@@ -1,0 +1,131 @@
+SOLUTION 0
+    units       mol/L
+    pH          8.01 charge
+    pe          -0.67
+    Ca          4.71e-4
+    C(4)        2.19e-3
+    S(6)        1.70e-4
+    Na          1.54e-3
+    Al          2.81e-7
+    K           1.00e-5
+    Fe(+2)      6.59e-6
+    Fe(+3)      2.53e-8
+END
+SOLUTION 1
+    pH          3.0 charge
+    pe          17.53
+    units       mol/L
+    Ca          1e-4
+    C(4)        1e-2
+    S(6)        1e-1
+    Na          9.09e-2
+    Al          1.43e-2
+    K           7.67e-5
+    Fe(+2)      1.14e-8
+    Fe(+3)      2.23e-2
+END
+KINETICS 1
+-cvode true
+-steps 1 day
+-cvode_steps 500
+-bad_step_max 2000
+Calcite
+	-m0     5.9572
+	-parms  0.00432
+    -tol 1e-10
+Gypsum
+	-m0     0.0
+	-parms  0.00432
+    -tol 1e-10
+Ferrihydrite
+    -m0     0.0
+    -parms  0.000432
+    -tol 1e-10
+Jarosite
+    -m0     0.0
+    -parms  0.000432
+    -tol 1e-12
+Gibbsite
+    -m0     1.5065
+    -parms  0.0000432
+    -tol 1e-12
+Siderite
+    -m0     1.7088
+    -parms  0.000432
+    -tol 1e-12
+END
+RATES 1
+Calcite
+	-start
+	10 k0 = PARM(1)
+	30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+	80 moles = k_t * (1 - SR("Calcite")) * TIME
+	110 SAVE moles
+	-end
+Gypsum
+	-start
+	10 k0 = PARM(1)
+	30 k_t = k0
+	80 moles = k_t * (1 - SR("Gypsum")) * TIME
+	110 SAVE moles
+	-end
+Ferrihydrite
+    -start
+    10 k0 = PARM(1)
+    30 k_t = k0
+    80 moles = k_t * (1 - SR("Ferrihydrite")) * TIME
+    110 SAVE moles
+    -end
+Jarosite
+    -start
+    10 k0 = PARM(1)
+    30 k_t = k0
+    80 moles = k_t * (1 - SR("Jarosite")) * TIME
+    110 SAVE moles
+    -end
+Gibbsite
+    -start
+    10 k0 = PARM(1)
+    30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+    80 moles = k_t * (1 - SR("Gibbsite")) * TIME
+    110 SAVE moles
+    -end
+Siderite
+    -start
+    10 k0 = PARM(1)
+    30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+    80 moles = k_t * (1 - SR("Siderite")) * TIME
+    110 SAVE moles
+    -end
+END
+USER_PUNCH 1
+    -headings Calcite d_Calcite Gypsum d_Gypsum Ferrihydrite d_Ferrihydrite Jarosite d_Jarosite Gibbsite d_Gibbsite Siderite d_Siderite
+    -start
+    10 PUNCH KIN("Calcite")
+    20 PUNCH KIN_DELTA("Calcite")
+    30 PUNCH KIN("Gypsum")
+    40 PUNCH KIN_DELTA("Gypsum")
+    50 PUNCH KIN("Ferrihydrite")
+    60 PUNCH KIN_DELTA("Ferrihydrite")
+    70 PUNCH KIN("Jarosite")
+    80 PUNCH KIN_DELTA("Jarosite")
+    90 PUNCH KIN("Gibbsite")
+    100 PUNCH KIN_DELTA("Gibbsite")
+    110 PUNCH KIN("Siderite")
+    120 PUNCH KIN_DELTA("Siderite")
+END
+SELECTED_OUTPUT 1
+    -step false
+    -high_precision false
+    -water false
+    soln false
+    pH false
+    sim false
+    state false
+    time false
+    pe false
+    distance false
+END
+PRINT
+    -warnings 0
+END

@@ -1,9 +1,14 @@
-__pycache__/
-*.pyc
+**/__pycache__/
+**/*.pyc
 
-.vscode/
+/.vscode/
+
+/case/
 
 /bin/
 /trash/
 /examples/*/simulation/
 /examples/*/output/
+
+/cases/*/simulation/
+/cases/*/output/

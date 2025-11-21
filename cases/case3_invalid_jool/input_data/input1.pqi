@@ -1,0 +1,164 @@
+SOLUTION 0
+    units       mol/L
+    pH          6.819198
+    density     1.277466
+    Cl          8.012954 charge
+    K           0.443996
+    Na          0.383686
+    Ca          0.011044
+    Mg          3.636298
+    S(6)        0.051828
+    C(4)        0.000088
+END
+SOLUTION 1 # 补水渠
+    pH          7.301126
+    density     1.202735
+    units       mol/L
+    Cl          5.477398 charge
+    K           0.000041
+    Na          5.477398
+    Ca          0.000031
+    Mg          0.000512
+    S(6)        0.069920
+    C(4)        0.000088
+END
+SOLUTION 2 # 达布逊湖
+    pH        7.42
+    units     mol/L
+    density   1.1478
+    K         0.025972
+    Na        1.567091
+    Ca        0.037221
+    Mg        1.031086
+    Cl        3.595516 charge
+    S(6)      0.060598
+    C(4)      0.009043
+END
+# EQUILIBRIUM_PHASES 1
+#     Halite      0.0    18.380
+#     Carnallite  0.0    0.599
+#     Polyhalite  0.0    0.376
+#     Sylvite     0.0    0.0507
+#     Gypsum      0.0    0.176
+#     # Bischofite  0.0    0.00
+#     # Syngenite   0.0    0.00
+# END
+# EQUILIBRIUM_PHASES 2
+#     Halite      0.0    18.380
+#     Carnallite  0.0    0.00
+#     Polyhalite  0.0    0.00
+#     Sylvite     0.0    0.00
+#     Gypsum      0.0    0.00
+#     # Bischofite  0.0    0.00
+#     # Syngenite   0.0    0.00
+# END
+EXCHANGE 1
+    -equilibrate with solution 0
+    X 0.00114
+END
+KINETICS 1
+Halite
+    -m0  18.380
+    -parms  1.0e-3
+Carnallite
+    -m0  0.599
+    -parms  1.2e-3
+Sylvite
+    -m0  0.0507
+    -parms  1.0e-4
+#预定时间可以不要？
+# steps  10.0 days
+INCREMENTAL_REACTIONS true
+END
+RATES 1
+Halite
+    -start
+    10 k0 = PARM(1)
+    20 IF M0 <= 0 THEN M0 = 1E-20
+    30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+    80 moles = k_t * (1 - SR("Halite")) * TIME
+    100 IF moles > 0 AND moles > M THEN moles = M
+    110 SAVE moles
+    -end
+Carnallite
+    -start
+    10 k0 = PARM(1)
+    20 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+    80 moles = k_t * (1 - SR("Carnallite")) * TIME
+    100 IF moles > 0 AND moles > M THEN moles = M
+    110 SAVE moles
+    -end
+Sylvite
+    -start
+    10 k0 = PARM(1)
+    20 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+    80 moles = k_t * (1 - SR("Sylvite")) * TIME
+    100 IF moles > 0 AND moles > M THEN moles = M
+    110 SAVE moles
+    -end
+END
+# USER_PUNCH 1
+#     -headings K Na Ca Mg Li Cl S(6) C(4) Halite Carnallite Polyhalite Sylvite Gypsum d_Halite d_Carnallite d_Polyhalite d_Sylvite d_Gypsum density(g/L)
+#     -start
+#     20 PUNCH TOT("K")    * TOT("water") / SOLN_VOL
+#     30 PUNCH TOT("Na")   * TOT("water") / SOLN_VOL
+#     40 PUNCH TOT("Ca")   * TOT("water") / SOLN_VOL
+#     50 PUNCH TOT("Mg")   * TOT("water") / SOLN_VOL
+#     60 PUNCH TOT("Li")   * TOT("water") / SOLN_VOL
+#     70 PUNCH TOT("Cl")   * TOT("water") / SOLN_VOL
+#     80 PUNCH TOT("S(6)") * TOT("water") / SOLN_VOL
+#     90 PUNCH TOT("C(4)") * TOT("water") / SOLN_VOL
+#     100 PUNCH EQUI("Halite")
+#     110 PUNCH EQUI("Carnallite")
+#     120 PUNCH EQUI("Polyhalite")
+#     130 PUNCH EQUI("Sylvite")
+#     140 PUNCH EQUI("Gypsum")
+#     170 PUNCH EQUI_DELTA("Halite")
+#     180 PUNCH EQUI_DELTA("Carnallite")
+#     190 PUNCH EQUI_DELTA("Polyhalite")
+#     200 PUNCH EQUI_DELTA("Sylvite")
+#     210 PUNCH EQUI_DELTA("Gypsum")
+#     240 PUNCH RHO
+# END
+USER_PUNCH 1
+    -headings K Na Ca Mg Li Cl S(6) C(4) Halite Carnallite Polyhalite Sylvite Gypsum d_Halite d_Carnallite d_Polyhalite d_Sylvite d_Gypsum density(g/L)
+    -start
+    20 PUNCH TOT("K")    * TOT("water") / SOLN_VOL
+    30 PUNCH TOT("Na")   * TOT("water") / SOLN_VOL
+    40 PUNCH TOT("Ca")   * TOT("water") / SOLN_VOL
+    50 PUNCH TOT("Mg")   * TOT("water") / SOLN_VOL
+    60 PUNCH TOT("Li")   * TOT("water") / SOLN_VOL
+    70 PUNCH TOT("Cl")   * TOT("water") / SOLN_VOL
+    80 PUNCH TOT("S(6)") * TOT("water") / SOLN_VOL
+    90 PUNCH TOT("C(4)") * TOT("water") / SOLN_VOL
+    100 PUNCH KIN("Halite")
+    110 PUNCH KIN("Carnallite")
+    120 PUNCH KIN("Polyhalite")
+    130 PUNCH KIN("Sylvite")
+    140 PUNCH KIN("Gypsum")
+    170 PUNCH KIN_DELTA("Halite")
+    180 PUNCH KIN_DELTA("Carnallite")
+    190 PUNCH KIN_DELTA("Polyhalite")
+    200 PUNCH KIN_DELTA("Sylvite")
+    210 PUNCH KIN_DELTA("Gypsum")
+    240 PUNCH RHO
+END
+SELECTED_OUTPUT 1
+    -step flase
+    -high_precision false
+    -water false
+    soln false
+    pH false
+    sim false
+    state false
+    time false
+    pe false
+    distance false
+END
+KNOBS 1
+    -iterations      400
+    -step_size       10
+    -pe_step_size    1
+    -diagonal_scale  true
+    -tolerance       1e-10
+END
