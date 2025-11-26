@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-1. Navigate to the `examples/` folder and select a case study (e.g., `example1`).
+1. Navigate to the `examples/` folder and select a case study (e.g., `PHT3D_E02`).
 2. Run the simulation:
 
 ```bash

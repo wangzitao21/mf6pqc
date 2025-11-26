@@ -513,7 +513,7 @@ class mf6pqc:
                 
                 # Update PhreeqcRM porosity
                 self.phreeqc_rm.SetPorosity(self.porosity)
-
+                
                 # Update GWT porosity / thetam
                 for sp in self.components:
                     self.modflow_api.set_value(self.thetam_tags[sp], new_porosity)
@@ -547,7 +547,7 @@ class mf6pqc:
             time_step_index += 1
 
             # Print every 10 steps
-            if time_step_index % 10 == 0:
+            if time_step_index % 1 == 0:
                 print(f"  t = {current_time:.2f}/{end_time:.2f} days, step={time_step_index}")
 
         # todo !
@@ -574,184 +574,184 @@ class mf6pqc:
 
     # todo 
     def run_with_SIA(self):
-            """
-            Main loop for the coupled simulation (SIA / Picard Iteration)
-            """
-            self._initialize_modflow6()
-            if not self.is_setup:
-                raise RuntimeError("setup() must be called before running the simulation")
+        """
+        Main loop for the coupled simulation (SIA / Picard Iteration)
+        """
+        self._initialize_modflow6()
+        if not self.is_setup:
+            raise RuntimeError("setup() must be called before running the simulation")
+        
+        print("\n--- Starting SIA/Picard ---")
+        start_sim_time = time.time()
+        
+        conc_var_info = {}
+        for sp_name in self.components:
+            gwt_model_name = f"gwt_{sp_name}_model"
+            address = self.modflow_api.get_var_address("X", gwt_model_name)
+            ptr = self.modflow_api.get_value_ptr(address)
+            conc_var_info[sp_name] = {
+                "address": address, "ptr": ptr, "shape": ptr.shape
+            }
+
+        if self.if_update_porosity_K:
+            self.K11_tag = self.modflow_api.get_var_address("K11", "gwf_model", "NPF")
+            self.K33_tag = self.modflow_api.get_var_address("K33", "gwf_model", "NPF")
+
+            self.KCHANGEPER_tag = self.modflow_api.get_var_address("KCHANGEPER", "gwf_model", "NPF")
+            self.KCHANGESTP_tag = self.modflow_api.get_var_address("KCHANGESTP", "gwf_model", "NPF")
+            self.NODEKCHANGE_tag = self.modflow_api.get_var_address("NODEKCHANGE", "gwf_model", "NPF")
+
+            self.thetam_tags = {
+                sp: self.modflow_api.get_var_address("thetam", f"gwt_{sp}_model", "MST")
+                for sp in self.components
+            }
+
+            self.modflow_api.set_value(self.KCHANGEPER_tag, np.array([self.sim.kper+2]))
+            self.modflow_api.set_value(self.NODEKCHANGE_tag, np.ones(self.nxyz, dtype=np.int32))
             
-            print("\n--- Starting SIA/Picard ---")
-            start_sim_time = time.time()
+            current_K11 = self.modflow_api.get_value(self.K11_tag).copy()
+            
+            self.results_porosity = [self.porosity.copy()]
+            self.results_K = [current_K11.copy()]
 
-            conc_var_info = {}
-            for sp_name in self.components:
-                gwt_model_name = f"gwt_{sp_name}_model"
-                address = self.modflow_api.get_var_address("X", gwt_model_name)
-                ptr = self.modflow_api.get_value_ptr(address)
-                conc_var_info[sp_name] = {
-                    "address": address, "ptr": ptr, "shape": ptr.shape
-                }
+        if self.if_update_diffc:
+            self.diffc_tags = {
+                sp: self.modflow_api.get_var_address("DIFFC", f"gwt_{sp}_model", "DSP")
+                for sp in self.components
+            }
+            self.results_diffc = []
 
-            if self.if_update_porosity_K:
-                self.K11_tag = self.modflow_api.get_var_address("K11", "gwf_model", "NPF")
-                self.K33_tag = self.modflow_api.get_var_address("K33", "gwf_model", "NPF")
+        # todo
+        ims_addr = self.modflow_api.get_var_address("MXITER", "SLN_1")
+        max_inner_iter = self.modflow_api.get_value_ptr(ims_addr)[0]
+        n_solutions = self.modflow_api.get_subcomponent_count()
+        
+        conc_from_mf = np.empty(self.nxyz * self.ncomps, dtype=float)
+        conc_after_reaction = np.empty_like(conc_from_mf)
+        species_slices = [self._get_species_slice(i) for i in range(self.ncomps)]
 
-                self.KCHANGEPER_tag = self.modflow_api.get_var_address("KCHANGEPER", "gwf_model", "NPF")
-                self.KCHANGESTP_tag = self.modflow_api.get_var_address("KCHANGESTP", "gwf_model", "NPF")
-                self.NODEKCHANGE_tag = self.modflow_api.get_var_address("NODEKCHANGE", "gwf_model", "NPF")
+        temp_selected = self.phreeqc_rm.GetSelectedOutput()
+        nsel = len(temp_selected) // self.nxyz
+        self.selected_output = temp_selected.reshape(-1, self.nxyz)
+        self.results = [self.selected_output.copy()]
 
-                self.thetam_tags = {
-                    sp: self.modflow_api.get_var_address("thetam", f"gwt_{sp}_model", "MST")
-                    for sp in self.components
-                }
+        # Picard iteration parameters
+        max_picard_iter = 100
+        picard_tol = 1e-4     # convergence tolerance
+        
+        current_time = self.modflow_api.get_current_time()
+        end_time = self.modflow_api.get_end_time()
+        time_step_index = 0
 
-                self.modflow_api.set_value(self.KCHANGEPER_tag, np.array([self.sim.kper+2]))
-                self.modflow_api.set_value(self.NODEKCHANGE_tag, np.ones(self.nxyz, dtype=np.int32))
+        while current_time < end_time:
+
+            dt = self.modflow_api.get_time_step()
+
+            self.modflow_api.prepare_time_step(dt)
+
+            picard_k = 0
+            picard_converged = False
+
+            prev_iter_porosity = self.porosity.copy()
+
+            # Picard Loop
+            while picard_k < max_picard_iter:
+                if self.if_update_porosity_K:
+                    self.modflow_api.set_value(self.KCHANGESTP_tag, np.array([self.sim.kstp+2]))
                 
-                current_K11 = self.modflow_api.get_value(self.K11_tag).copy()
-                
-                self.results_porosity = [self.porosity.copy()]
-                self.results_K = [current_K11.copy()]
-
-            if self.if_update_diffc:
-                self.diffc_tags = {
-                    sp: self.modflow_api.get_var_address("DIFFC", f"gwt_{sp}_model", "DSP")
-                    for sp in self.components
-                }
-                self.results_diffc = []
-
-            # todo
-            ims_addr = self.modflow_api.get_var_address("MXITER", "SLN_1")
-            max_inner_iter = self.modflow_api.get_value_ptr(ims_addr)[0]
-            n_solutions = self.modflow_api.get_subcomponent_count()
-            
-            conc_from_mf = np.empty(self.nxyz * self.ncomps, dtype=float)
-            conc_after_reaction = np.empty_like(conc_from_mf)
-            species_slices = [self._get_species_slice(i) for i in range(self.ncomps)]
-
-            temp_selected = self.phreeqc_rm.GetSelectedOutput()
-            nsel = len(temp_selected) // self.nxyz
-            self.selected_output = temp_selected.reshape(-1, self.nxyz)
-            self.results = [self.selected_output.copy()]
-
-            # Picard iteration parameters
-            max_picard_iter = 100
-            picard_tol = 1e-4     # convergence tolerance
-            
-            current_time = self.modflow_api.get_current_time()
-            end_time = self.modflow_api.get_end_time()
-            time_step_index = 0
-
-            while current_time < end_time:
-
-                dt = self.modflow_api.get_time_step()
-
-                self.modflow_api.prepare_time_step(dt)
-
-                picard_k = 0
-                picard_converged = False
-
-                prev_iter_porosity = self.porosity.copy()
-
-                # Picard Loop
-                while picard_k < max_picard_iter:
-                    if self.if_update_porosity_K:
-                        self.modflow_api.set_value(self.KCHANGESTP_tag, np.array([self.sim.kstp+2]))
+                for solution_id in range(1, n_solutions + 1):
+                    self.modflow_api.prepare_solve(solution_id)
                     
-                    for solution_id in range(1, n_solutions + 1):
-                        self.modflow_api.prepare_solve(solution_id)
-                        
-                        # MODFLOW Inner Loop
-                        kiter = 0
-                        has_converged = False
-                        while kiter < max_inner_iter:
-                            has_converged = self.modflow_api.solve(solution_id)
-                            kiter += 1
-                            if has_converged:
-                                break
-
-                        self.modflow_api.finalize_solve(solution_id)
-
-                    for i, sp in enumerate(self.components):
-                        ptr = conc_var_info[sp]["ptr"]
-                        sl = species_slices[i]
-                        conc_from_mf[sl] = ptr.reshape(-1)
-
-                    self.phreeqc_rm.SetConcentrations(conc_from_mf)
-                    self.phreeqc_rm.SetTime(current_time)
-                    self.phreeqc_rm.SetTimeStep(dt)
-                    self.phreeqc_rm.RunCells()
-
-                    conc_after_reaction[:] = self.phreeqc_rm.GetConcentrations()
-
-                    for i, sp in enumerate(self.components):
-                        ptr = conc_var_info[sp]["ptr"]
-                        sl = species_slices[i]
-                        ptr[:] = conc_after_reaction[sl].reshape(ptr.shape)
-
-                    if self.if_update_porosity_K:
-                        new_porosity_iter = self._update_porosity()
-                        max_change = np.max(np.abs(new_porosity_iter - prev_iter_porosity))
-                        
-                        self.porosity = new_porosity_iter
-                        prev_iter_porosity = new_porosity_iter.copy()
-
-                        current_K11 = self._update_K(current_K11, self.porosity, new_porosity_iter) 
-
-                        self.modflow_api.set_value(self.K11_tag, current_K11)
-                        self.modflow_api.set_value(self.K33_tag, current_K11 * 0.1)
-
-                        for sp in self.components:
-                            self.modflow_api.set_value(self.thetam_tags[sp], self.porosity)
-
-                        self.phreeqc_rm.SetPorosity(self.porosity)
-
-                        if self.if_update_diffc:
-                            new_diffc = self._update_diffc(self.porosity)
-                            for sp in self.components:
-                                self.modflow_api.set_value(self.diffc_tags[sp], new_diffc)
-
-                        if max_change < picard_tol:
-                            picard_converged = True
-                            print(f"  Picard converged at iteration {picard_k+1}, Max Delta Porosity: {max_change:.2e}")
+                    # MODFLOW Inner Loop
+                    kiter = 0
+                    has_converged = False
+                    while kiter < max_inner_iter:
+                        has_converged = self.modflow_api.solve(solution_id)
+                        kiter += 1
+                        if has_converged:
                             break
-                    else:
-                        picard_converged = True
-                        break
 
-                    picard_k += 1
-                
-                if not picard_converged:
-                    print(f"Warning: Time step {time_step_index} Picard did NOT converge (Iter={max_picard_iter})")
+                    self.modflow_api.finalize_solve(solution_id)
 
-                self.modflow_api.finalize_time_step()
-                current_time = self.modflow_api.get_current_time()
+                for i, sp in enumerate(self.components):
+                    ptr = conc_var_info[sp]["ptr"]
+                    sl = species_slices[i]
+                    conc_from_mf[sl] = ptr.reshape(-1)
 
-                temp_selected = self.phreeqc_rm.GetSelectedOutput()
-                self.selected_output = temp_selected.reshape(nsel, self.nxyz)
-                self.results.append(self.selected_output.copy())
+                self.phreeqc_rm.SetConcentrations(conc_from_mf)
+                self.phreeqc_rm.SetTime(current_time)
+                self.phreeqc_rm.SetTimeStep(dt)
+                self.phreeqc_rm.RunCells()
+
+                conc_after_reaction[:] = self.phreeqc_rm.GetConcentrations()
+
+                for i, sp in enumerate(self.components):
+                    ptr = conc_var_info[sp]["ptr"]
+                    sl = species_slices[i]
+                    ptr[:] = conc_after_reaction[sl].reshape(ptr.shape)
 
                 if self.if_update_porosity_K:
-                    self.results_porosity.append(self.porosity.copy())
-                    self.results_K.append(current_K11.copy())
-                
-                if self.if_update_diffc and 'new_diffc' in locals():
-                    self.results_diffc.append(new_diffc.copy())
+                    new_porosity_iter = self._update_porosity()
+                    max_change = np.max(np.abs(new_porosity_iter - prev_iter_porosity))
+                    
+                    self.porosity = new_porosity_iter
+                    prev_iter_porosity = new_porosity_iter.copy()
 
-                time_step_index += 1
-                if time_step_index % 10 == 0:
-                    print(f"  t = {current_time:.2f}/{end_time:.2f}, step={time_step_index}, Picard Iters={picard_k+1}")
+                    current_K11 = self._update_K(current_K11, self.porosity, new_porosity_iter) 
 
-            self.results = np.array(self.results)
+                    self.modflow_api.set_value(self.K11_tag, current_K11)
+                    self.modflow_api.set_value(self.K33_tag, current_K11 * 0.1)
+
+                    for sp in self.components:
+                        self.modflow_api.set_value(self.thetam_tags[sp], self.porosity)
+
+                    self.phreeqc_rm.SetPorosity(self.porosity)
+
+                    if self.if_update_diffc:
+                        new_diffc = self._update_diffc(self.porosity)
+                        for sp in self.components:
+                            self.modflow_api.set_value(self.diffc_tags[sp], new_diffc)
+
+                    if max_change < picard_tol:
+                        picard_converged = True
+                        print(f"  Picard converged at iteration {picard_k+1}, Max Delta Porosity: {max_change:.2e}")
+                        break
+                else:
+                    picard_converged = True
+                    break
+
+                picard_k += 1
+            
+            if not picard_converged:
+                print(f"Warning: Time step {time_step_index} Picard did NOT converge (Iter={max_picard_iter})")
+
+            self.modflow_api.finalize_time_step()
+            current_time = self.modflow_api.get_current_time()
+
+            temp_selected = self.phreeqc_rm.GetSelectedOutput()
+            self.selected_output = temp_selected.reshape(nsel, self.nxyz)
+            self.results.append(self.selected_output.copy())
+
             if self.if_update_porosity_K:
-                self.results_porosity = np.array(self.results_porosity)
-                self.results_K = np.array(self.results_K)
-            if self.if_update_diffc:
-                self.results_diffc = np.array(self.results_diffc)
+                self.results_porosity.append(self.porosity.copy())
+                self.results_K.append(current_K11.copy())
+            
+            if self.if_update_diffc and 'new_diffc' in locals():
+                self.results_diffc.append(new_diffc.copy())
 
-            self.final_time_step_index = time_step_index
-            print(f"--- Simulation finished, steps={time_step_index}, elapsed={time.time()-start_sim_time:.2f} sec ---")
+            time_step_index += 1
+            if time_step_index % 10 == 0:
+                print(f"  t = {current_time:.2f}/{end_time:.2f}, step={time_step_index}, Picard Iters={picard_k+1}")
+
+        self.results = np.array(self.results)
+        if self.if_update_porosity_K:
+            self.results_porosity = np.array(self.results_porosity)
+            self.results_K = np.array(self.results_K)
+        if self.if_update_diffc:
+            self.results_diffc = np.array(self.results_diffc)
+
+        self.final_time_step_index = time_step_index
+        print(f"--- Simulation finished, steps={time_step_index}, elapsed={time.time()-start_sim_time:.2f} sec ---")
 
     def save_results(self, filename: str = None):
         """
