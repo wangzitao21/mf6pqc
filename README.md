@@ -4,6 +4,8 @@
 
 ---
 
+> ⚠️ Note: Please use MODFLOW 6 version 6.4.3, as newer versions (e.g., 6.6.3) are currently not supported.
+
 ## Installation & Setup
 
 1. Download the appropriate `mf6` executable for your operating system from [MODFLOW EXECUTABLES](https://github.com/MODFLOW-ORG/executables), and place it in the `./bin/` directory of this project.
