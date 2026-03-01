@@ -1,6 +1,7 @@
 **/__pycache__/
 **/*.pyc
 
+/.trae/
 /.vscode/
 
 /cases/
