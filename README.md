@@ -25,6 +25,8 @@ mf6pqc is a reactive transport framework that couples **MODFLOW6** with **Phreeq
 5. **Output**: Results are located in `examples/PHT3D_E02/output/`, including `results.npy` and other files.
 6. **SIA Mode**: In `run.py`, comment out `simulator.run()` and enable `simulator.run_SIA()`. Run the script again to use the SIA loop.
 
+![PHT3D_E02](./doc/figures/PHT3D_E02.png)
+
 ## Scope and Extension
 
 * **mf6pqc** is suitable for 1D to 3D reactive transport simulations.
