@@ -1,5 +1,7 @@
 # mf6pqc
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 mf6pqc is a reactive transport framework that couples **MODFLOW6** with **PhreeqcRM**. It is designed to simulate the co-evolution of flow, solute transport, and chemical reactions in porous media. The framework provides two coupling strategies (**SNIA** and **SIA**) and supports feedback updates for porosity, permeability, diffusion coefficients, and density, making numerical simulations more consistent with real physical processes.
 
 ## Features
