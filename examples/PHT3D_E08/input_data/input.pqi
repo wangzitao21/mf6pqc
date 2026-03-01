@@ -25,19 +25,23 @@ END
 KINETICS 1
 	Pce
 	-formula Pce -1.0 Tce 1.0  Cl- 1.0
-	-parms 0.005
+	-m0 10.0
+	-parms 5.787037e-008
 
 	Tce
 	-formula Tce -1.0 Dce 1.0 Cl- 1.0
-	-parms 0.003
+	-m0 10.0
+	-parms 3.472222e-008
 
 	Dce
 	-formula Dce -1.0 Vc 1.0 Cl- 1.0
-	-parms 0.002
+	-m0 10.0
+	-parms 2.314815e-008
 	
 	Vc
 	-formula Vc -1.0 Ethe 1.0 Cl- 1.0
-	-parms 0.001
+	-m0 10.0
+	-parms 1.157407e-008
 END
 USER_PUNCH 1
     -headings Pce Vc Cl Na

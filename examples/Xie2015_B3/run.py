@@ -15,10 +15,11 @@ example_dir = './examples/Xie2015_B3'
 ic_mapping = {
     'solution':           0,   # SOLUTION 0
     'kinetics':           1,   # 1
+    # 'equilibrium_phases': 1,   # EQUILIBRIUM_PHASES 1
 }
 
 sim_params = {
-    "case_name": "Example1",
+    "case_name": "Xie2015_B3",
     "nxyz": 80,
     "nthreads": 12,
     "temperature": 25.0,
@@ -32,7 +33,7 @@ sim_params = {
 
     "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
     "pqi_path": os.path.join(example_dir, "input_data/input.pqi"),
-    "modflow_dll_path": "./bin/libmf6.dll",
+    "modflow_dll_path": "./bin/mf6.4.3_win64/libmf6.dll",
     "workspace": os.path.join(example_dir, "simulation"),
     "output_dir": os.path.join(example_dir, "output"),
 

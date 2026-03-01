@@ -23,27 +23,27 @@ END
 KINETICS 1
 	S_a
 	-formula S_a -1.0 S_b 0.5
-	-parms 0.2 #2.314814e-006
+	-parms 2.314814e-006
 	-m0 0.1
 
 	S_b
 	-formula S_b -1.0 S_c 0.3 S_cc 0.2 S_ccc 0.1
-	-parms 0.1 # 1.157400e-006
+	-parms 1.157400e-006
 	-m0 0.1
 
 	S_c
 	-formula S_c -1.0
-	-parms 0.02 #2.314814e-007
+	-parms 2.314814e-007
 	-m0 0.1
 	
 	S_cc
 	-formula S_cc -1.0
-	-parms 0.02 #2.314814e-007
+	-parms 2.314814e-007
 	-m0 0.1
 
 	S_ccc
 	-formula S_ccc -1.0
-	-parms 0.02 #2.314814e-007
+	-parms 2.314814e-007
 	-m0 0.1
 END
 USER_PUNCH 1

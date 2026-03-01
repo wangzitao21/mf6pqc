@@ -24,6 +24,14 @@ SOLUTION 1
     Fe(+2)      1.14e-8
     Fe(+3)      2.23e-2
 END
+EQUILIBRIUM_PHASES 1
+    Calcite       0.0  5.9572
+    Gypsum        0.0  0.0
+    Ferrihydrite  0.0  0.0
+    Jarosite      0.0  0.0
+    Gibbsite      0.0  1.5065
+    Siderite      0.0  1.7088
+END
 KINETICS 1
 Calcite
 	-m0     5.9572
@@ -47,7 +55,7 @@ Siderite
 -cvode true
 -cvode_steps 500
 -bad_step_max 2000
--tol 1e-6
+-tol 1e-9
 END
 RATES 1
 Calcite
@@ -96,18 +104,30 @@ END
 USER_PUNCH 1
     -headings Calcite d_Calcite Gypsum d_Gypsum Ferrihydrite d_Ferrihydrite Jarosite d_Jarosite Gibbsite d_Gibbsite Siderite d_Siderite
     -start
-    10 PUNCH KIN("Calcite")
-    20 PUNCH KIN_DELTA("Calcite")
-    30 PUNCH KIN("Gypsum")
-    40 PUNCH KIN_DELTA("Gypsum")
-    50 PUNCH KIN("Ferrihydrite")
-    60 PUNCH KIN_DELTA("Ferrihydrite")
-    70 PUNCH KIN("Jarosite")
-    80 PUNCH KIN_DELTA("Jarosite")
-    90 PUNCH KIN("Gibbsite")
-    100 PUNCH KIN_DELTA("Gibbsite")
-    110 PUNCH KIN("Siderite")
-    120 PUNCH KIN_DELTA("Siderite")
+    # 10 PUNCH KIN("Calcite")
+    # 20 PUNCH KIN_DELTA("Calcite")
+    # 30 PUNCH KIN("Gypsum")
+    # 40 PUNCH KIN_DELTA("Gypsum")
+    # 50 PUNCH KIN("Ferrihydrite")
+    # 60 PUNCH KIN_DELTA("Ferrihydrite")
+    # 70 PUNCH KIN("Jarosite")
+    # 80 PUNCH KIN_DELTA("Jarosite")
+    # 90 PUNCH KIN("Gibbsite")
+    # 100 PUNCH KIN_DELTA("Gibbsite")
+    # 110 PUNCH KIN("Siderite")
+    # 120 PUNCH KIN_DELTA("Siderite")
+    10 PUNCH EQUI("Calcite")
+    20 PUNCH EQUI_DELTA("Calcite")
+    30 PUNCH EQUI("Gypsum")
+    40 PUNCH EQUI_DELTA("Gypsum")
+    50 PUNCH EQUI("Ferrihydrite")
+    60 PUNCH EQUI_DELTA("Ferrihydrite")
+    70 PUNCH EQUI("Jarosite")
+    80 PUNCH EQUI_DELTA("Jarosite")
+    90 PUNCH EQUI("Gibbsite")
+    100 PUNCH EQUI_DELTA("Gibbsite")
+    110 PUNCH EQUI("Siderite")
+    120 PUNCH EQUI_DELTA("Siderite")
 END
 SELECTED_OUTPUT 1
     -step false

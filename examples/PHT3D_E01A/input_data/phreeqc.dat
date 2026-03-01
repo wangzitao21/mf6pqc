@@ -1,0 +1,88 @@
+SOLUTION_MASTER_SPECIES
+#
+#element Spe        alk     gfw_formula     element_gfw
+#
+H        H+             -1.     H               1.008
+H(0)     H2             0.0     H
+H(1)     H+             -1.     0.0
+E        e-             0.0     0.0             0.0
+O        H2O            0.0     O               16.00
+O(0)     O2             0.0     O
+O(-2)    H2O            0.0     0.0
+Na       Na+            0.0     Na              22.9898
+Cl       Cl-            0.0     Cl              35.453
+Spe      Spe            0.0     Spe             1.0
+
+SOLUTION_SPECIES
+
+H+ = H+
+        log_k           0.000
+        -gamma          9.0000    0.0000
+e- = e-
+        log_k           0.000
+H2O = H2O
+        log_k           0.000
+Na+ = Na+
+        log_k           0.000
+Cl- = Cl-
+        log_k           0.000
+Spe  = Spe
+        log_k           0.000
+
+
+H2O = OH- + H+
+        log_k           -14.000
+        delta_h 13.362  kcal
+        -analytic       -283.971       -0.05069842  13323.0    102.24447      -1119669.0
+        -gamma    3.5000    0.0000
+
+2 H2O = O2 + 4 H+ + 4 e-
+        log_k           -86.08
+        delta_h 134.79 kcal
+
+2 H+ + 2 e- = H2
+        log_k           -3.15
+        delta_h -1.759 kcal
+
+Na+ + H2O = NaOH + H+
+        log_k           -14.180
+
+PHASES
+
+O2(g)
+        O2 = O2
+        log_k           -2.960
+        delta_h -1.844  kcal
+
+H2(g)
+        H2 = H2
+        log_k           -3.150
+        delta_h -1.759  kcal
+
+H2O(g)
+	H2O = H2O
+	log_k 		1.51
+	delta_h		-44.03   kJ
+
+# RATES
+
+##########
+#PCE                
+##########
+#
+# Spe          
+# -start
+# 10  mSpe = tot("Spe")
+# 20  if (mSpe <= 1e-12) then goto 200
+# 22  k_mon = 0.5
+# 24  v_max = 4.77e-03 / 86400
+# 30  rate = v_max * mSpe/(k_mon + mSpe)
+# #40  moles = rate * m * (m/m0) * time
+# 40  moles = rate * time
+# #50  if (moles > m) then moles = m
+# 50  if (moles > mSpe) then moles = mSpe
+# 200 SAVE moles
+# -end
+
+
+# END

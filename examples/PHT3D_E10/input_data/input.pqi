@@ -57,91 +57,91 @@ EQUILIBRIUM_PHASES 1
 END
 KINETICS 0
     Benz
-    -parms 0.000864
+    -parms 1.000000e-008
     -m0 1.000000e+001
     -Formula Benz -1.0
 
     Tolu
-    -parms 0.01728
+    -parms 2.000000e-007
     -m0 1.000000e+001
     -Formula Tolu -1.0
 
     Ethy
-    -parms 0.00001728
+    -parms 2.000000e-010
     -m0 1.000000e+001
     -Formula Ethy -1.0
 
     Xyl
-    -parms 0.00001728
+    -parms 2.000000e-010
     -m0 1.000000e+001
     -Formula Xyl -1.0
 
     Benznapl
-    -parms 0.00864
+    -parms 1.000000e-007
     -m0 1.000000e+001
     -Formula Benz   1.0
 
     Tolunapl
-    -parms 0.00864
+    -parms 1.000000e-007
     -m0 1.000000e+001
     -Formula Tolu   1.0
 
     Ethynapl
-    -parms 0.00864
+    -parms 1.000000e-007
     -m0 1.000000e+001
     -Formula Ethy   1.0
 
     Xylnapl
-    -parms 0.00864
+    -parms 1.000000e-007
     -m0 1.000000e+001
     -Formula Xyl    1.0
 END
 KINETICS 1
     Benz
-    -parms 0.000864
+    -parms 1.000000e-008
     -m0 1.000000e+001
     -Formula Benz -1.0
 
     Tolu
-    -parms 0.01728
+    -parms 2.000000e-007
     -m0 1.000000e+001
     -Formula Tolu -1.0
 
     Ethy
-    -parms 0.00001728
+    -parms 2.000000e-010
     -m0 1.000000e+001
     -Formula Ethy -1.0
 
     Xyl
-    -parms 0.00001728
+    -parms 2.000000e-010
     -m0 1.000000e+001
     -Formula Xyl -1.0
 
     Benznapl
-    -parms 0.00864
+    -parms 1.000000e-007
     -m0 0.2
     -Formula Benz   1.0
 
     Tolunapl
-    -parms 0.00864
+    -parms 1.000000e-007
     -m0 0.2
     -Formula Tolu   1.0
 
     Ethynapl
-    -parms 0.00864
+    -parms 1.000000e-007
     -m0 1.000000e+001
     -Formula Ethy   1.0
 
     Xylnapl
-    -parms 0.00864
+    -parms 1.000000e-007
     -m0 1.000000e+001
     -Formula Xyl    1.0
 END
 USER_PUNCH 1
     -headings Benznapl Tolunapl Goethite Calcite Ca Benz Tolu
     -start
-    10 PUNCH KIN("Benznapl") #  * TOT("water") / SOLN_VOL
-	20 PUNCH KIN("Tolunapl") # * TOT("water") / SOLN_VOL
+    10 PUNCH KIN("Benznapl")
+	20 PUNCH KIN("Tolunapl")
 	30 PUNCH EQUI("Goethite")
     40 PUNCH EQUI("Calcite")
     50 PUNCH TOT("Ca") * TOT("water") / SOLN_VOL
@@ -160,4 +160,7 @@ SELECTED_OUTPUT 1
     time false
     pe false
     distance false
+END
+PRINT
+    -warnings 0
 END

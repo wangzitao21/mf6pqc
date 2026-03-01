@@ -30,8 +30,8 @@ sim_params = {
     "solution_density_volume": False,
 
     "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
-    "pqi_path": os.path.join(example_dir, "input_data/phreeqc.pqi"),
-    "modflow_dll_path": "./bin/libmf6.dll",
+    "pqi_path": os.path.join(example_dir, "input_data/input.pqi"),
+    "modflow_dll_path": "./bin/mf6.7.0/libmf6.dll",
     "workspace": os.path.join(example_dir, "simulation"),
     "output_dir": os.path.join(example_dir, "output"),
 
@@ -53,6 +53,7 @@ transport_model(
 )
 
 simulator.run()
+# simulator.run_SIA()
 simulator.save_results()
 
 simulator.finalize()

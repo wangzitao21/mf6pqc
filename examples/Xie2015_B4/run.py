@@ -14,13 +14,14 @@ example_dir = './examples/Xie2015_B4'
 
 ic_mapping = {
     'solution':           0,   # SOLUTION 0
-    'kinetics':           1,   # 1
+    # 'kinetics':           1,   # 1
+    'equilibrium_phases': 1,   # EQUILIBRIUM_PHASES 1
 }
 
 sim_params = {
     "case_name": "Xie2015_B4",
     "nxyz": 81,
-    "nthreads": 12,
+    "nthreads": 8,
     "temperature": 25.0,
     "pressure": 2.0,
     "porosity": 0.35,
@@ -32,13 +33,13 @@ sim_params = {
 
     "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
     "pqi_path": os.path.join(example_dir, "input_data/input.pqi"),
-    "modflow_dll_path": "./bin/libmf6.dll",
+    "modflow_dll_path": "./bin/mf6.7.0/libmf6.dll",
     "workspace": os.path.join(example_dir, "simulation"),
     "output_dir": os.path.join(example_dir, "output"),
 
     "if_update_porosity_K": True,
     "if_update_density": False,
-    "if_update_diffusion_coefficient": True,
+    "if_update_diffc": True,
 }
 
 K_arr = np.ones((1, 1, 81)) * 10.0
@@ -62,7 +63,7 @@ transport_model(
     initial_head=0.0
 )
 
-simulator.run()
+simulator.run() # _SIA
 simulator.save_results()
 simulator.finalize()
 

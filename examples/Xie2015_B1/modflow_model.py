@@ -9,8 +9,8 @@ def transport_model(
 
     sim_ws="",
     species_list=["Ca", "Mg", "Cl"],
-    perlen=365*120,
-    nstp=1000*120,
+    perlen=365*10,
+    nstp=10000,
     initial_conc=np.ones(120000) * 0.05,
     bc=[0.1, 0.1, 0.1],
     porosity=0.35,
@@ -25,7 +25,7 @@ def transport_model(
     top = 1.0
     botm = 0
 
-    nper = 1
+    nper = 3
     tsmult = 1.0
 
     hk = K11
@@ -33,7 +33,7 @@ def transport_model(
     sim = flopy.mf6.MFSimulation(
         sim_name="model",
         sim_ws=sim_ws,
-        exe_name='./bin/mf6.exe',
+        exe_name='./bin/mf6.7.0/mf6.exe',
         verbosity_level=0
     )
 
@@ -42,8 +42,36 @@ def transport_model(
         pname='tdis',
         time_units='DAYS',
         nper=nper,
-        perioddata=[(perlen, nstp, tsmult)]
+        # perioddata=[(perlen, nstp, tsmult)]
+        perioddata=[(365.0*0.1, 100, 1.0),
+                    (365.0*0.9, 500, 1.0),
+                    (365.0*9.0, 1000, 1.0),
+                    # (perlen, nstp, 1.0),
+                    ]
     )
+
+    # ! ATS =======================================
+    # ats_perioddata = [
+    #     # (iperats, dt0, dtmin, dtmax, dtadj, dtfailadj)
+    #     # iperats=0 (Flopy中从0开始对应第1个应力期，但在MF6文件中会写为1)
+    #     (0, 1e-4, 1e-6, 1.0, 3.0, 5.0) 
+    # ]
+    # """
+    # iperats=0  指定要应用ATS的应力期编号
+    # dt0=0.001  应力期的初始时间步长
+    # dtmin=1e-5 允许的最小时间步长
+    # dtmax=1.0  允许的最小时间步长
+    # dtadj=2.0  允许的最小时间步长
+    # dtfailadj=5.0 失败重试因子
+    # """
+
+    # flopy.mf6.ModflowUtlats(
+    #     sim,
+    #     maxats=len(ats_perioddata),
+    #     perioddata=ats_perioddata,
+    #     filename=f"{gwf_model_name}.ats"
+    # )
+    # ! ATS =======================================
 
     gwf_model = flopy.mf6.ModflowGwf(
         sim, 
@@ -154,11 +182,26 @@ def transport_model(
         pname='oc',
         budget_filerecord=f'{gwf_model_name}.bud',
         head_filerecord=f'{gwf_model_name}.hds',
-        saverecord=[('HEAD', 'ALL'), ('BUDGET', 'LAST')],
+        saverecord=[('HEAD', 'ALL'), ('BUDGET', 'ALL')],
         printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
     )
 
 # ! ######################### 各种离子溶质运移模型 ######################### ! #
+
+    # ! src --------------------------------------------------
+    src_data_list = []
+    # 遍历所有网格 (Layer, Row, Col) 注意 flopy 使用 0-based 索引
+    for k in range(nlay):
+        for i in range(nrow):
+            for j in range(ncol):
+                cellid = (k, i, j)
+                # 格式: (cellid, smassrate, [aux], [boundname])
+                # 这里只填最基本的: ((k, i, j), 0.0)
+                src_data_list.append((cellid, 0.0))
+    
+    # 确定最大边界数，这对于内存分配非常重要
+    src_maxbound = len(src_data_list)
+    # ! src --------------------------------------------------
 
     species_conc = {}
     for i in range(len(species_list)):
@@ -227,6 +270,19 @@ def transport_model(
             pname='mst',
             porosity=porosity, 
             filename=f"{gwt_model_name}.mst")
+        
+        # ! ---------------------------------------------------------------------
+        # 实例化 SRC 包
+        # ---------------------------------------------------------------------
+        flopy.mf6.ModflowGwtsrc(
+            gwt_model, 
+            # pname='SRC',          # 给包起个名字，方便查找
+            save_flows=True,      # 建议开启，方便检查注入量
+            maxbound=src_maxbound,# 关键：预分配全场内存
+            stress_period_data={0: src_data_list}, # 填入所有网格的 0.0 初始值
+            filename=f"{gwt_model_name}.src"
+        )
+        # ! ---------------------------------------------------------------------
         
         sourcerecarray = [("bushui", "AUX", species_name)]
         flopy.mf6.ModflowGwtssm(

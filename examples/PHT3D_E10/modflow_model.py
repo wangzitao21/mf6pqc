@@ -4,17 +4,20 @@ import matplotlib.pyplot as plt
 import os
 from flopy.utils import CellBudgetFile
 
-def transport_model(perlen=500,
-                    nstp=50,
-                    initial_head=100.0,
-                    sim_ws=None,
-                    species_list=["Ca", "Mg", "Cl"],
-                    initial_conc=np.ones(120000) * 0.05,
-                    bc_1=[0.1, 0.1, 0.1],
-                    bc_15=[0.3, 0.2, 0.1],
-                   ):
-    sim_name = 'model'
-    gwf_model_name = 'gwf_model'
+def transport_model(
+    perlen=500,
+    nstp=50,
+    initial_head=100.0,
+    sim_ws=None,
+    species_list=None,
+    initial_conc=None,
+    bc_1=None,
+    bc_15=None,
+
+    hk=None
+):
+    sim_name = "model"
+    gwfname = f"gwf_{sim_name}"
 
     Lx, Ly = 200.0, 50.0
     nlay, nrow, ncol = 1, 40, 80
@@ -27,13 +30,11 @@ def transport_model(perlen=500,
 
     nper = 1
     tsmult = 1.0
-
-    hk = np.load("./input_data/PHT3D_CASE_10/hk.npy").reshape(nlay, nrow, ncol)
     
     sim = flopy.mf6.MFSimulation(
-        sim_name=gwf_model_name,    # 总的模拟名
-        sim_ws=sim_ws, # 模拟文件夹
-        exe_name='mf6',
+        sim_name=sim_name,
+        sim_ws=sim_ws,
+        exe_name='./bin/mf6.7.0/mf.exe',
         verbosity_level=0
     )
 
@@ -45,7 +46,7 @@ def transport_model(perlen=500,
         perioddata=[(perlen, nstp, tsmult)]
     )
 
-    gwf_model = flopy.mf6.ModflowGwf(sim, modelname=gwf_model_name, save_flows=False)
+    gwf_model = flopy.mf6.ModflowGwf(sim, modelname=gwfname, save_flows=False)
 
     ims = flopy.mf6.ModflowIms(
         sim,
@@ -111,7 +112,7 @@ def transport_model(perlen=500,
         maxbound=len(chd_spd_1),
         stress_period_data={0: chd_spd_1},
         auxiliary=species_list,
-        filename=f"{gwf_model_name}.1.chd"
+        filename=f"{gwfname}.1.chd"
     )
 
     chd_spd_2 = []
@@ -123,7 +124,7 @@ def transport_model(perlen=500,
         save_flows=False,
         maxbound=len(chd_spd_2),
         stress_period_data={0: chd_spd_2},
-        filename=f"{gwf_model_name}.2.chd"
+        filename=f"{gwfname}.2.chd"
     )
 
     # Well at bottom-left corner
@@ -141,8 +142,8 @@ def transport_model(perlen=500,
     flopy.mf6.ModflowGwfoc(
         gwf_model,
         pname='oc',
-        budget_filerecord=f'{gwf_model_name}.bud',
-        head_filerecord=f'{gwf_model_name}.hds',
+        budget_filerecord=f'{gwfname}.bud',
+        head_filerecord=f'{gwfname}.hds',
         saverecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')],
         printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
     )
@@ -165,9 +166,13 @@ def transport_model(perlen=500,
         diffc = 3e-10    # 分子扩散系数
         porosity = 0.30
 
-        gwt_model_name = f"gwt_{species_name}_{sim.name.split('_')[1]}"
-        gwt_model = flopy.mf6.ModflowGwt(sim, modelname=gwt_model_name, save_flows=False, 
-                                  model_nam_file=f"{gwt_model_name}.nam")
+        gwtname = f"gwt_{species_name}_model"
+        gwt_model = flopy.mf6.ModflowGwt(
+            sim, 
+            modelname=gwtname,
+            save_flows=False, 
+            model_nam_file=f"{gwtname}.nam"
+        )
 
         imsgwt = flopy.mf6.ModflowIms(
             sim,
@@ -181,7 +186,7 @@ def transport_model(perlen=500,
             linear_acceleration="BICGSTAB",
             scaling_method="NONE",
             reordering_method="NONE",
-            filename=f"{gwt_model_name}.ims"
+            filename=f"{gwtname}.ims"
         )
         sim.register_ims_package(imsgwt, [gwt_model.name])
         
@@ -196,17 +201,18 @@ def transport_model(perlen=500,
             top=gwf_model.dis.top.array,
             botm=gwf_model.dis.botm.array, 
             idomain=1, 
-            filename=f"{gwt_model_name}.dis"
+            filename=f"{gwtname}.dis"
         )
+
         if species_name == "Benznapl":
             print("TRueTRUETRUE")
-            species_initial_conc = np.load("./input_data/PHT3D_CASE_10/init_Benznapl.npy").reshape(nlay, nrow, ncol)
+            species_initial_conc = np.load("./input_data/PHT3D_E10/init_Benznapl.npy").reshape(nlay, nrow, ncol)
         elif species_name == "Tolunapl":
             print("TRueTRUETRUE")
-            species_initial_conc = np.load("./input_data/PHT3D_CASE_10/init_Tolunapl.npy").reshape(nlay, nrow, ncol)
-        flopy.mf6.ModflowGwtic(gwt_model, strt=species_initial_conc, filename=f"{gwt_model_name}.ic")
-
-        flopy.mf6.ModflowGwtadv(gwt_model, scheme="TVD", filename=f"{gwt_model_name}.adv")
+            species_initial_conc = np.load("./input_data/PHT3D_E10/init_Tolunapl.npy").reshape(nlay, nrow, ncol)
+        flopy.mf6.ModflowGwtic(gwt_model, strt=species_initial_conc, filename=f"{gwtname}.ic")
+        
+        flopy.mf6.ModflowGwtadv(gwt_model, scheme="TVD", filename=f"{gwtname}.adv")
         
         flopy.mf6.ModflowGwtdsp(
             gwt_model, 
@@ -214,16 +220,15 @@ def transport_model(perlen=500,
             alh=alh, #alv=alv,
             ath1=ath1, #atv=atv,
             diffc=diffc,
-            filename=f"{gwt_model_name}.dsp"
+            filename=f"{gwtname}.dsp"
         )
 
-        flopy.mf6.ModflowGwtmst(gwt_model, porosity=porosity, filename=f"{gwt_model_name}.mst")
+        flopy.mf6.ModflowGwtmst(gwt_model, porosity=porosity, filename=f"{gwtname}.mst")
 
         cnc_spd = []
         for i in range(nrow):
             cnc_spd.append([(0, i, 0), bc_15[m]],)
         m+=1
-        # print(cnc_spd)
         flopy.mf6.ModflowGwtcnc(gwt_model, maxbound=len(cnc_spd), stress_period_data={0: cnc_spd}, )#boundnames=True,)
         
         sourcerecarray = [("chd-1", "AUX", species_name)]
@@ -231,41 +236,39 @@ def transport_model(perlen=500,
             gwt_model, 
             pname=f'{species_name}_ssm',
             sources=sourcerecarray, 
-            filename=f"{gwt_model_name}.ssm"
+            filename=f"{gwtname}.ssm"
         )
         
         flopy.mf6.ModflowGwtoc(
             gwt_model, 
-            budget_filerecord=f"{gwt_model_name}.cbc", 
-            concentration_filerecord=f"{gwt_model_name}.ucn",
+            budget_filerecord=f"{gwtname}.cbc", 
+            concentration_filerecord=f"{gwtname}.ucn",
             saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")]
         )
         
         flopy.mf6.ModflowGwfgwt(
             sim, 
             exgtype="GWF6-GWT6", 
-            exgmnamea=gwf_model_name, 
-            exgmnameb=gwt_model_name, 
-            filename=f"{gwt_model_name}.gwfgwt"
+            exgmnamea=gwfname, 
+            exgmnameb=gwtname, 
+            filename=f"{gwtname}.gwfgwt"
         )
         
         gwt_models[species_name] = gwt_model
 
-# ! ######################### 写入和运行模型 ######################### ! #
-
     sim.write_simulation(silent=False)
-    sim.run_simulation(silent=False, report=True)
+#     sim.run_simulation(silent=False, report=True)
 
-# ! ######################### 读取和输出结果 ######################### ! #
+# # ! ######################### 读取和输出结果 ######################### ! #
 
-    head = gwf_model.oc.output.head().get_alldata()
+#     head = gwf_model.oc.output.head().get_alldata()
 
-    concentration_data = []
-    for species, gwt_model in gwt_models.items():
-        concentration_data.append(gwt_model.oc.output.concentration().get_alldata().ravel())
-    concentration_data = np.array(concentration_data).ravel() # ! 展平还给 phreeqcrm
+#     concentration_data = []
+#     for species, gwt_model in gwt_models.items():
+#         concentration_data.append(gwt_model.oc.output.concentration().get_alldata().ravel())
+#     concentration_data = np.array(concentration_data).ravel() # ! 展平还给 phreeqcrm
 
-    return head, concentration_data
+#     return head, concentration_data
 
 # strt = np.load("./input_data/PHT3D_CASE_10/strt.npy").reshape(1, 40, 80)
 

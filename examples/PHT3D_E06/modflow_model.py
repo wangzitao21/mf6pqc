@@ -1,7 +1,7 @@
 import numpy as np
 import flopy
 
-def create_and_run_models(
+def transport_model(
     sim_ws=None,
     bc=None,
     species_list=None, 
@@ -14,29 +14,8 @@ def create_and_run_models(
     ncol = 180
     nlay = 1
     
-    
-    # todo delete
-    if initial_conc is not None and not isinstance(initial_conc, dict):
-        if len(initial_conc) != len(species_list) * ncol:
-            raise ValueError(f"{len(species_list) * ncol} {len(initial_conc)}")
-        conc_dict = {}
-        for i, species in enumerate(species_list):
-            species_values = initial_conc[i * ncol:(i + 1) * ncol]
-            conc_dict[species] = species_values
+    gwfname = f"gwf_{sim_name}"
         
-        initial_conc = conc_dict
-    if len(f"gwf_{sim_name}") > 16:
-        if "step" in sim_name:
-            step_num = sim_name.split("step")[1]
-            gwfname = f"gwf_s{step_num}"
-            if len(gwfname) > 16:
-                gwfname = f"g{step_num}"
-        else:
-            gwfname = f"gwf_{sim_name[:10]}"
-    else:
-        gwfname = f"gwf_{sim_name}"
-    
-
     nrow = 1
     ncol = 180
     nlay = 1
@@ -56,7 +35,7 @@ def create_and_run_models(
     sim = flopy.mf6.MFSimulation(
         sim_name=gwfname,
         sim_ws=sim_ws,
-        exe_name='mf6',
+        exe_name='./bin/mf6.6.3/mf.exe',
         verbosity_level=0
     )
     
@@ -145,8 +124,26 @@ def create_and_run_models(
         saverecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')],
         printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
     )
-    
-    species_conc = initial_conc.copy()
+
+# ! ######################### 各种离子溶质运移模型 ######################### ! #
+
+    # ! 将输入的 phreeqcrm 的一维数组转换成字典格式
+    species_conc = {}
+    for i in range(len(species_list)):
+        start = i * nlay * nrow * ncol
+        end = (i + 1) * nlay * nrow * ncol
+        species_conc[species_list[i]] = initial_conc[start:end]
+
+    # ! src --------------------------------------------------
+    src_data_list = []
+    for k in range(nlay):
+        for i in range(nrow):
+            for j in range(ncol):
+                cellid = (k, i, j)
+                # (cellid, smassrate, [aux], [boundname])
+                src_data_list.append((cellid, 0.0))
+    src_maxbound = len(src_data_list)
+    # ! src --------------------------------------------------
     
     gwt_models = {}
     for species_name, species_initial_conc in species_conc.items():
@@ -159,8 +156,12 @@ def create_and_run_models(
         
         gwtname = f"gwt_{species_name}_{sim.name.split('_')[1]}"
         
-        gwt = flopy.mf6.ModflowGwt(sim, modelname=gwtname, save_flows=True, 
-                                  model_nam_file=f"{gwtname}.nam")
+        gwt = flopy.mf6.ModflowGwt(
+            sim,
+            modelname=gwtname,
+            save_flows=True, 
+            model_nam_file=f"{gwtname}.nam"
+        )
         
         imsgwt = flopy.mf6.ModflowIms(
             sim, 
@@ -192,10 +193,11 @@ def create_and_run_models(
             filename=f"{gwtname}.dis"
         )
         
-        if isinstance(species_initial_conc, (list, np.ndarray)):
-            flopy.mf6.ModflowGwtic(gwt, strt=species_initial_conc, filename=f"{gwtname}.ic")
-        else:
-            flopy.mf6.ModflowGwtic(gwt, strt=species_initial_conc, filename=f"{gwtname}.ic")
+        flopy.mf6.ModflowGwtic(
+            gwt,
+            strt=species_initial_conc,
+            filename=f"{gwtname}.ic"
+        )
         
         flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwtname}.adv")
         
@@ -209,6 +211,17 @@ def create_and_run_models(
         )
 
         flopy.mf6.ModflowGwtmst(gwt, porosity=porosity, filename=f"{gwtname}.mst")
+
+        # ---------------------------------------------------------------------
+        flopy.mf6.ModflowGwtsrc(
+            gwt,
+            pname='SRC',
+            save_flows=True,
+            maxbound=src_maxbound,
+            stress_period_data={0: src_data_list},
+            filename=f"{gwtname}.src"
+        )
+        # ! ---------------------------------------------------------------------
 
         sourcerecarray = [("WEL-1", "AUX", species_name)]
         flopy.mf6.ModflowGwtssm(

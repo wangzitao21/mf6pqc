@@ -12,8 +12,8 @@ def transport_model(
 
     sim_ws="",
     species_list=["Ca", "Mg", "Cl"],
-    perlen=36500,#*30,
-    nstp=30000,#*30,
+    perlen=365*100,#*30,
+    nstp=3000,#*30,
     initial_conc=np.ones(120000) * 0.05,
     bc=[0.1, 0.1, 0.1],
     porosity=0.35,
@@ -36,7 +36,7 @@ def transport_model(
     sim = flopy.mf6.MFSimulation(
         sim_name="model",
         sim_ws=sim_ws,
-        exe_name='./bin/mf6.exe',
+        exe_name='./bin/6.7.0/mf6.exe',
         verbosity_level=0
     )
 
@@ -152,6 +152,21 @@ def transport_model(
 
 # ! ######################### 各种离子溶质运移模型 ######################### ! #
 
+    # ! src --------------------------------------------------
+    src_data_list = []
+    # 遍历所有网格 (Layer, Row, Col) 注意 flopy 使用 0-based 索引
+    for k in range(nlay):
+        for i in range(nrow):
+            for j in range(ncol):
+                cellid = (k, i, j)
+                # 格式: (cellid, smassrate, [aux], [boundname])
+                # 这里只填最基本的: ((k, i, j), 0.0)
+                src_data_list.append((cellid, 0.0))
+    
+    # 确定最大边界数，这对于内存分配非常重要
+    src_maxbound = len(src_data_list)
+    # ! src --------------------------------------------------
+
     # ! 将输入的 phreeqcrm 的一维数组转换成字典格式
     species_conc = {}
     for i in range(len(species_list)):
@@ -223,6 +238,19 @@ def transport_model(
             porosity=porosity, 
             filename=f"{gwt_model_name}.mst")
         
+        # ! ---------------------------------------------------------------------
+        # 实例化 SRC 包
+        # ---------------------------------------------------------------------
+        flopy.mf6.ModflowGwtsrc(
+            gwt_model, 
+            # pname='SRC',          # 给包起个名字，方便查找
+            save_flows=True,      # 建议开启，方便检查注入量
+            maxbound=src_maxbound,# 关键：预分配全场内存
+            stress_period_data={0: src_data_list}, # 填入所有网格的 0.0 初始值
+            filename=f"{gwt_model_name}.src"
+        )
+        # ! ---------------------------------------------------------------------
+        
         #  CNC 包定义替换 SSM 包定义 ###
         # 从映射中获取当前物种的边界浓度值
         current_bc_conc = bc_conc_map[species_name]
@@ -243,7 +271,7 @@ def transport_model(
             stress_period_data=cnc_spd_dict,
             save_flows=False,
             print_input=False,  # 推荐在调试时开启，以在列表文件中看到输入
-            pname=f"{gwt_model_name}.cnc" # 为每个包提供一个唯一的pname是好习惯
+            filename=f"{gwt_model_name}.cnc" # 为每个包提供一个唯一的pname是好习惯
         )
         
         flopy.mf6.ModflowGwtoc(

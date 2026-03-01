@@ -23,13 +23,15 @@ EQUILIBRIUM_PHASES 1
 	Dolomite  0.0  0.00000000
 END
 USER_PUNCH 1
-    -headings Cl(mol/L) Mg(mol/L) Ca(mol/L) Calcite(mol) Dolomite(mol)
+    -headings Cl Mg Ca Calcite Dolomite d_Calcite d_Dolomite
     -start
     10 PUNCH TOT("Cl") * TOT("water") / SOLN_VOL
     20 PUNCH TOT("Mg") * TOT("water") / SOLN_VOL
     30 PUNCH TOT("Ca") * TOT("water") / SOLN_VOL
     50 PUNCH EQUI("Calcite")
     60 PUNCH EQUI("Dolomite")
+    70 PUNCH EQUI_DELTA("Calcite")
+    80 PUNCH EQUI_DELTA("Dolomite")
 END
 SELECTED_OUTPUT 1
     -step flase
@@ -42,4 +44,7 @@ SELECTED_OUTPUT 1
     time false
     pe false
     distance false
+END
+PRINT
+    -warnings 0
 END

@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import flopy
 
 def transport_model(
-    sim_ws='./simulation/PHT3D_CASE_8',
-    perlen=1120, 
-    nstp=56, 
+    sim_ws=None,
+    perlen=1100, 
+    nstp=55, 
     bc=None,
     bc_0=None,
     species_list=None, 
@@ -39,7 +39,7 @@ def transport_model(
     sim = flopy.mf6.MFSimulation(
         sim_name=gwfname,
         sim_ws=sim_ws,
-        exe_name='mf6',
+        exe_name='./bin/mf6.7.0/mf.exe',
         verbosity_level=0
     )
     
@@ -141,11 +141,25 @@ def transport_model(
         printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
     )
 
+# ! ######################### 各种离子溶质运移模型 ######################### ! #
+
+    # ! 将输入的 phreeqcrm 的一维数组转换成字典格式
     species_conc = {}
     for i in range(len(species_list)):
         start = i * nlay * nrow * ncol
         end = (i + 1) * nlay * nrow * ncol
         species_conc[species_list[i]] = initial_conc[start:end]
+
+    # ! src --------------------------------------------------
+    src_data_list = []
+    for k in range(nlay):
+        for i in range(nrow):
+            for j in range(ncol):
+                cellid = (k, i, j)
+                # (cellid, smassrate, [aux], [boundname])
+                src_data_list.append((cellid, 0.0))
+    src_maxbound = len(src_data_list)
+    # ! src --------------------------------------------------
 
     m=0
     gwt_models = {}
@@ -217,17 +231,16 @@ def transport_model(
 
         flopy.mf6.ModflowGwtmst(gwt, porosity=porosity, filename=f"{gwtname}.mst")
 
-        # cnc_spd = []
-        # for i in range(nrow):
-        #     cnc_spd.append([(0, i, 0), bc_0[m]])
-        # m+=1
-        # flopy.mf6.ModflowGwtcnc(
-        #     gwt,
-        #     pname='cnc',
-        #     maxbound=len(cnc_spd),
-        #     stress_period_data={0: cnc_spd},
-        #     filename=f"{gwtname}.cnc"
-        # )
+        # ---------------------------------------------------------------------
+        flopy.mf6.ModflowGwtsrc(
+            gwt,
+            pname='SRC',
+            save_flows=True,
+            maxbound=src_maxbound,
+            stress_period_data={0: src_data_list},
+            filename=f"{gwtname}.src"
+        )
+        # ! ---------------------------------------------------------------------
 
         sourcerecarray = [("WEL-1", "AUX", species_name),
                           ("chd-1", "AUX", species_name)

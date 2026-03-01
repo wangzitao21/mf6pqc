@@ -9,21 +9,20 @@ from mf6pqc.mf6pqc import mf6pqc
 
 from modflow_model import transport_model
 
-example_dir = './examples/PHT3D_E08'
+example_dir = './examples/PHT3D_E01'
 
 ic_mapping = {
-    'solution': 0,
-    'kinetics': 1,
+    'solution': 0,   # SOLUTION 0
+    'kinetics': 1,   # 1
 }
 
 sim_params = {
-    "case_name": "PHT3D_E08",
-    "nxyz": 31*51,
+    "case_name": "PHT3D_E01",
+    "nxyz": 150,
     "nthreads": 6,
-
     "temperature": 25.0,
     "pressure": 2.0,
-    "porosity": 0.3,
+    "porosity": 0.25,
     "saturation": 1.0,
     "density": 1.0,
     "print_chemistry_mask": 1,
@@ -32,7 +31,7 @@ sim_params = {
 
     "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
     "pqi_path": os.path.join(example_dir, "input_data/input.pqi"),
-    "modflow_dll_path": "./bin/mf6.7.0/libmf6.dll",
+    "modflow_dll_path": "./bin/mf6.6.3/libmf6.dll",
     "workspace": os.path.join(example_dir, "simulation"),
     "output_dir": os.path.join(example_dir, "output"),
 
@@ -43,22 +42,23 @@ sim_params = {
 simulator = mf6pqc(**sim_params)
 initial_concentrations = simulator.setup(ic_map=ic_mapping)
 bc_conc = simulator.get_initial_concentrations(1)
-bc_conc_0 = simulator.get_initial_concentrations(0)
 
 components = simulator.get_components()
 
-head = transport_model(
+transport_model(
     sim_ws=os.path.join(example_dir, 'simulation'),
     species_list=components,
     initial_conc=initial_concentrations,
     bc=bc_conc,
-    bc_0=bc_conc_0,
 )
 
-simulator.run()
+simulator.run_SIA()
+# simulator.run()
+
 simulator.save_results()
+
 simulator.finalize()
 
 print("\n-------------------------------------------")
-print(f"{sim_params['case_name']} done")
+print(f"'{sim_params['case_name']}' done")
 print("-------------------------------------------\n")

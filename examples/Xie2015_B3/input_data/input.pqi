@@ -24,35 +24,38 @@ SOLUTION 1
     Fe(+2)      1.14e-8
     Fe(+3)      2.23e-2
 END
+EQUILIBRIUM_PHASES 1
+    Calcite       0.0  5.9572
+    Gypsum        0.0  0.0
+    Ferrihydrite  0.0  0.0
+    Jarosite      0.0  0.0
+    Gibbsite      0.0  1.5065
+    Siderite      0.0  1.7088
+END
 KINETICS 1
--cvode true
--steps 1 day
--cvode_steps 500
--bad_step_max 2000
 Calcite
 	-m0     5.9572
 	-parms  0.00432
-    -tol 1e-10
 Gypsum
 	-m0     0.0
 	-parms  0.00432
-    -tol 1e-10
 Ferrihydrite
     -m0     0.0
     -parms  0.000432
-    -tol 1e-10
 Jarosite
     -m0     0.0
     -parms  0.000432
-    -tol 1e-12
 Gibbsite
     -m0     1.5065
     -parms  0.0000432
-    -tol 1e-12
 Siderite
     -m0     1.7088
     -parms  0.000432
-    -tol 1e-12
+-steps 1 day
+-cvode true
+-cvode_steps 500
+-bad_step_max 2000
+-tol 1e-9
 END
 RATES 1
 Calcite
@@ -113,6 +116,18 @@ USER_PUNCH 1
     100 PUNCH KIN_DELTA("Gibbsite")
     110 PUNCH KIN("Siderite")
     120 PUNCH KIN_DELTA("Siderite")
+    # 10 PUNCH EQUI("Calcite")
+    # 20 PUNCH EQUI_DELTA("Calcite")
+    # 30 PUNCH EQUI("Gypsum")
+    # 40 PUNCH EQUI_DELTA("Gypsum")
+    # 50 PUNCH EQUI("Ferrihydrite")
+    # 60 PUNCH EQUI_DELTA("Ferrihydrite")
+    # 70 PUNCH EQUI("Jarosite")
+    # 80 PUNCH EQUI_DELTA("Jarosite")
+    # 90 PUNCH EQUI("Gibbsite")
+    # 100 PUNCH EQUI_DELTA("Gibbsite")
+    # 110 PUNCH EQUI("Siderite")
+    # 120 PUNCH EQUI_DELTA("Siderite")
 END
 SELECTED_OUTPUT 1
     -step false

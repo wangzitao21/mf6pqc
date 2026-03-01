@@ -7,7 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from mf6pqc.mf6pqc import mf6pqc
 
-from modflow_model import create_and_run_models
+from modflow_model import transport_model
 
 example_dir = './examples/PHT3D_E06'
 
@@ -33,7 +33,7 @@ sim_params = {
 
     "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
     "pqi_path": os.path.join(example_dir, "input_data/phreeqc.pqi"),
-    "modflow_dll_path": "./bin/libmf6.dll",
+    "modflow_dll_path": "./bin/mf6.7.0/libmf6.dll",
     "workspace": os.path.join(example_dir, "simulation"),
     "output_dir": os.path.join(example_dir, "output"),
 
@@ -47,7 +47,7 @@ bc_conc = simulator.get_initial_concentrations(1)
 
 components = simulator.get_components()
 
-create_and_run_models(
+transport_model(
     sim_ws=os.path.join(example_dir, 'simulation'),
     species_list=components,
     initial_conc=initial_concentrations,
@@ -55,6 +55,7 @@ create_and_run_models(
 )
 
 simulator.run()
+# simulator.run_SIA()
 simulator.save_results()
 simulator.finalize()
 

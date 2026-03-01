@@ -61,7 +61,7 @@ S_a
 10  mS_a = tot("S_a")
 20  if (mS_a <= 1e-10) then goto 200
 30  rate = parm(1) * mS_a
-40  moles = rate * time
+40  moles = rate * time* TOT("water")
 200 SAVE moles
 -end
 ##########
@@ -73,7 +73,7 @@ S_b
 10  mS_b = tot("S_b")
 20  if (mS_b <= 1e-10) then goto 200
 30  rate = parm(1) * mS_b
-40  moles = rate * time
+40  moles = rate * time* TOT("water")
 200 SAVE moles
 -end
 ##########
@@ -85,7 +85,7 @@ S_c
 10  mS_c = tot("S_c")
 20  if (mS_c <= 1e-10) then goto 200
 30  rate = parm(1) * mS_c
-40  moles = rate * time
+40  moles = rate * time* TOT("water")
 200 SAVE moles
 -end
 ##########
@@ -97,7 +97,7 @@ S_cc
 10  mS_cc = tot("S_cc")
 20  if (mS_cc <= 1e-10) then goto 200
 30  rate = parm(1) * mS_cc
-40  moles = rate * time
+40  moles = rate * time* TOT("water")
 200 SAVE moles
 -end
 ##########
@@ -109,7 +109,7 @@ S_ccc
 10  mS_ccc = tot("S_ccc")
 20  if (mS_ccc <= 1e-10) then goto 200
 30  rate = parm(1) * mS_ccc
-40  moles = rate * time
+40  moles = rate * time* TOT("water")
 200 SAVE moles
 -end
 
