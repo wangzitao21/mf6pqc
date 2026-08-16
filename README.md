@@ -10,10 +10,7 @@ flow and transport with
 geochemistry.
 
 It is designed for hydrogeological research in which flow, multispecies
-transport, reactions, and selected medium properties evolve together. The
-project is currently **alpha research software**: its public examples are
-validation assets, but every new scientific application remains responsible
-for its own mass-balance, discretisation, chemistry, and parameter checks.
+transport, reactions, and selected medium properties evolve together.
 
 ## Capabilities
 
@@ -29,10 +26,6 @@ for its own mass-balance, discretisation, chemistry, and parameter checks.
   future learned models.
 - Explicit result times, atomic NumPy output, a manifest, convergence records,
   and quantitative public validation cases.
-
-The historical `mf6pqc` class and `run()` entry point remain supported.
-New code may use the PEP 8 alias `MF6PQC`, structured configuration, and
-`run(method=...)`.
 
 ## Architecture
 
@@ -197,4 +190,3 @@ claimed as implemented features yet:
 2. trained, constrained hydrogeological-property models with provenance and
    out-of-distribution safeguards.
 
-MF6PQC is distributed under the [GNU GPL v3](LICENSE).
