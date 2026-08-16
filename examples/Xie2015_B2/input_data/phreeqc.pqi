@@ -17,10 +17,10 @@ END
 KINETICS 1
 Calcite
 	-m0     8.13
-	-parms  0.00432
+	-parms  5e-8
 Gypsum
 	-m0     0.00
-	-parms  0.00432
+	-parms  5e-8
 END
 RATES 1
 Calcite

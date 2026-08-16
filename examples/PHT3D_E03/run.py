@@ -1,63 +1,59 @@
-import os
+"""Run the MF6PQC reproduction of PHT3D Example 3."""
+
+from __future__ import annotations
+
 import sys
-import numpy as np
-import matplotlib.pyplot as plt
+from pathlib import Path
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from mf6pqc.mf6pqc import mf6pqc
+CASE_DIR = Path(__file__).resolve().parent
+REPOSITORY_DIR = CASE_DIR.parents[1]
+sys.path.insert(0, str(REPOSITORY_DIR))
 
-from modflow_model import transport_model
+from mf6pqc.mf6pqc import mf6pqc  # noqa: E402
 
-example_dir = './examples/PHT3D_E03'
+from modflow_model import NCOL, POROSITY, TIME_STEPS, transport_model  # noqa: E402
 
-ic_mapping = {
-    'solution':           0,
-    'equilibrium_phases': 1,
-}
 
-sim_params = {
-    "case_name": "PHT3D_E03",
-    "nxyz": 80,
-    "nthreads": 6,
+simulator = mf6pqc(
+    case_name="PHT3D_E03",
+    nxyz=NCOL,
+    nthreads=6,
+    temperature=25.0,
+    pressure=1.0,
+    porosity=POROSITY,
+    saturation=1.0,
+    density=1.0,
+    print_chemistry_mask=1,
+    componentH2O=False,
+    solution_density_volume=False,
+    db_path=str(CASE_DIR / "input_data" / "phreeqc.dat"),
+    pqi_path=str(CASE_DIR / "input_data" / "phreeqc.pqi"),
+    modflow_dll_path=str(REPOSITORY_DIR / "bin" / "mf6.7.0" / "libmf6.dll"),
+    workspace=str(CASE_DIR / "simulation"),
+    output_dir=str(CASE_DIR / "output"),
+    if_update_porosity_K=False,
+    if_update_density=False,
+    save_steps=[TIME_STEPS // 4, TIME_STEPS // 2, TIME_STEPS],
+)
 
-    "temperature": 25.0,
-    "pressure": 2.0,
-    "porosity": 0.35,
-    "saturation": 1.0,
-    "density": 1.0,
-    "print_chemistry_mask": 1,
-    "componentH2O": False,
-    "solution_density_volume": False,
-
-    "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
-    "pqi_path": os.path.join(example_dir, "input_data/phreeqc.pqi"),
-    "modflow_dll_path": "./bin/mf6.7.0/libmf6.dll",
-    "workspace": os.path.join(example_dir, "simulation"),
-    "output_dir": os.path.join(example_dir, "output"),
-
-    "if_update_porosity_K": False,
-    "if_update_density": False
-}
-
-simulator = mf6pqc(**sim_params)
-initial_concentrations = simulator.setup(ic_map=ic_mapping)
-bc_conc = simulator.get_initial_concentrations(1)
-
-components = simulator.get_components()
+initial_concentrations = simulator.setup(
+    ic_map={"solution": 0, "equilibrium_phases": 1}
+)
+inflow_concentrations = simulator.get_initial_concentrations(1)
 
 transport_model(
-    sim_ws=os.path.join(example_dir, 'simulation'),
-    species_list=components,
+    sim_ws=CASE_DIR / "simulation",
+    species_list=simulator.get_components(),
     initial_conc=initial_concentrations,
-    bc=bc_conc,
+    inflow_concentrations=inflow_concentrations,
+    mf6_exe=REPOSITORY_DIR / "bin" / "mf6.7.0" / "mf6.exe",
 )
 
 simulator.run()
-# simulator.run_SIA()
 simulator.save_results()
 simulator.finalize()
 
 print("\n-------------------------------------------")
-print(f"{sim_params['case_name']} done")
+print("PHT3D_E03 done")
 print("-------------------------------------------\n")

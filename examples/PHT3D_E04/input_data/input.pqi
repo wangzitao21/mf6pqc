@@ -1,0 +1,45 @@
+SOLUTION 0
+    units mol/L
+    temp 25
+    pH   7.000
+    pe   13.628
+    K    2.000e-4
+    Na   1.000e-3
+    N(5) 1.200e-3
+END
+
+SOLUTION 1
+    units mol/L
+    temp 25
+    pH   6.997
+    pe   13.630
+    Ca   6.000e-4
+    Cl   1.200e-3
+END
+
+# Table 5.10 / phinp.dat values from the official PHT3D Example 4.
+# Porosity is one, so mol/L of cell and mol/L of water are identical here.
+EXCHANGE 1
+    CaX2 0.0000000
+    NaX  0.0005493
+    KX   0.0005507
+END
+
+SELECTED_OUTPUT 1
+    -reset false
+    -high_precision true
+    -water false
+    -pH false
+    -pe false
+    -time false
+    -distance false
+
+USER_PUNCH 1
+    -headings Ca Cl K Na
+    -start
+    10 PUNCH TOT("Ca") * TOT("water") / SOLN_VOL
+    20 PUNCH TOT("Cl") * TOT("water") / SOLN_VOL
+    30 PUNCH TOT("K")  * TOT("water") / SOLN_VOL
+    40 PUNCH TOT("Na") * TOT("water") / SOLN_VOL
+    -end
+END

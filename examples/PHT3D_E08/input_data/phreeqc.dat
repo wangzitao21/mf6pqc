@@ -71,7 +71,7 @@ Pce
 -start
 10  mPce = tot("Pce")
 20  if (mPce <= 1e-10) then goto 200
-30  rate = parm(1) * mPce
+30  rate = parm(1) * mPce * TOT("water")
 40  moles = rate * time
 200 SAVE moles
 -end
@@ -83,7 +83,7 @@ Tce
 -start
 10  mTce = tot("Tce")
 20  if (mTce <= 1e-10) then goto 200
-30  rate = parm(1) * mTce
+30  rate = parm(1) * mTce * TOT("water")
 40  moles = rate * time
 200 SAVE moles
 -end
@@ -95,7 +95,7 @@ Dce
 -start
 10  mDce = tot("Dce")
 20  if (mDce <= 1e-10) then goto 200
-30  rate = parm(1) * mDce
+30  rate = parm(1) * mDce * TOT("water")
 40  moles = rate * time
 200 SAVE moles
 -end
@@ -107,7 +107,7 @@ Vc
 -start
 10  mVc = tot("Vc")
 20  if (mVc <= 1e-10) then goto 200
-30  rate = parm(1) * mVc
+30  rate = parm(1) * mVc * TOT("water")
 40  moles = rate * time
 200 SAVE moles
 -end
@@ -119,7 +119,7 @@ Ethe
 -start
 10  mEthe = tot("Ethe")
 20  if (mEthe <= 1e-10) then goto 200
-30  rate = parm(1) * mEthe
+30  rate = parm(1) * mEthe * TOT("water")
 40  moles = rate * time
 200 SAVE moles
 -end

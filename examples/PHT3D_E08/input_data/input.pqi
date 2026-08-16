@@ -1,5 +1,5 @@
 SOLUTION 0
-	units mol/L
+	units mol/kgw
 	temp 25
 	pH   7.00 charge
 	pe   14.00
@@ -11,7 +11,7 @@ SOLUTION 0
 	Na   0.001
 END
 SOLUTION 1
-	units mol/L
+	units mol/kgw
 	temp 25
 	pH   7.00 charge
 	pe   4.00
@@ -46,20 +46,20 @@ END
 USER_PUNCH 1
     -headings Pce Vc Cl Na
     -start
-    20 PUNCH TOT("Pce") * TOT("water") / SOLN_VOL
-    30 PUNCH TOT("Vc")  * TOT("water") / SOLN_VOL
-	40 PUNCH TOT("Cl")  * TOT("water") / SOLN_VOL
-	50 PUNCH TOT("Na")  * TOT("water") / SOLN_VOL
+    20 PUNCH TOT("Pce")
+    30 PUNCH TOT("Vc")
+	40 PUNCH TOT("Cl")
+	50 PUNCH TOT("Na")
 END
 SELECTED_OUTPUT 1
-    -step flase
+    -step false
     -high_precision true
     -water false
-    soln false
-    pH false
-    sim false
-    state false
-    time false
-    pe false
-    distance false
+    -solution false
+    -pH false
+    -simulation false
+    -state false
+    -time false
+    -pe false
+    -distance false
 END

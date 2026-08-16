@@ -55,14 +55,14 @@ USER_PUNCH 1
 	110 PUNCH EQUI("Gypsum")
 END
 SELECTED_OUTPUT 1
-    -step flase
+    -step false
     -high_precision true
     -water false
-    soln false
-    pH true
-    sim false
-    state false
-    time false
-    pe true
-    distance false
+    -solution false
+    -pH true
+    -simulation false
+    -state false
+    -time false
+    -pe true
+    -distance false
 END

@@ -1,8 +1,5 @@
 import flopy
 import numpy as np
-import matplotlib.pyplot as plt
-import os
-from flopy.utils import CellBudgetFile
 
 def transport_model(
     
@@ -12,31 +9,34 @@ def transport_model(
 
     sim_ws="",
     species_list=["Ca", "Mg", "Cl"],
-    perlen=365*100,#*30,
-    nstp=3000,#*30,
+    perlen=365.0 * 3000,
+    nstp=100 * 3000,
     initial_conc=np.ones(120000) * 0.05,
     bc=[0.1, 0.1, 0.1],
     porosity=0.35,
+    d0=1.0e-9 * 86400.0,
     K11=10.0,
     initial_head=0.0
 ):
 
     gwf_model_name = 'gwf_model'
 
-    delr = [0.025] * ncol
+    if ncol != 81:
+        raise ValueError("B4 requires 81 cells: two boundary half cells and 79 interior cells")
+    delr = [0.0125] + [0.025] * 79 + [0.0125]
     delc = [1.0]
     top = 1.0
     botm = 0
 
-    nper = 1
-    tsmult = 1.0
+    perioddata = [(perlen, nstp, 1.0)]
+    nper = len(perioddata)
 
     hk = K11
     
     sim = flopy.mf6.MFSimulation(
         sim_name="model",
         sim_ws=sim_ws,
-        exe_name='./bin/6.7.0/mf6.exe',
+        exe_name='./bin/mf6.7.0/mf6.exe',
         verbosity_level=0
     )
 
@@ -45,13 +45,13 @@ def transport_model(
         pname='tdis',
         time_units='DAYS',
         nper=nper,
-        perioddata=[(perlen, nstp, tsmult)]
+        perioddata=perioddata
     )
 
     gwf_model = flopy.mf6.ModflowGwf(
         sim, 
         modelname=gwf_model_name, 
-        save_flows=False
+        save_flows=True
     )
     
     ims = flopy.mf6.ModflowIms(
@@ -61,12 +61,12 @@ def transport_model(
         outer_dvclose=1.0e-8,
         outer_maximum=50,
         under_relaxation='NONE',
-        inner_maximum=100,
+        inner_maximum=500,
         inner_dvclose=1.0e-9,
-        rcloserecord=1.0e-10,
-        linear_acceleration='CG',
-        scaling_method='NONE',
-        reordering_method='NONE',
+        rcloserecord=1.0e-8,
+        linear_acceleration='BICGSTAB',
+        scaling_method='DIAGONAL',
+        reordering_method='RCM',
         relaxation_factor=0.97
     )
     sim.register_ims_package(ims, [gwf_model.name])
@@ -109,36 +109,19 @@ def transport_model(
         sy=0.0
     )
 
-    chd_spd = [[(0, 0, ncol-1),0.0]]
+    # B4 is diffusion-only. Equal fixed heads at both ends enforce zero
+    # hydraulic gradient and therefore suppress advective transport.
+    chd_spd = [
+        [(0, 0, 0), 0.0],
+        [(0, 0, ncol - 1), 0.0],
+    ]
     flopy.mf6.ModflowGwfchd(
         gwf_model,
-        pname='chd',
+        pname='fixed_heads',
         save_flows=True,
         maxbound=len(chd_spd),
         stress_period_data={0: chd_spd},
-        filename=f"{gwf_model_name}.choushui.chd"
-    )
-
-    # wel_spd = [[(0, 0, ncol-1), -10.04],]
-    # flopy.mf6.ModflowGwfwel(
-    #     gwf_model,
-    #     pname='wel',
-    #     save_flows=False,
-    #     maxbound=len(wel_spd),
-    #     stress_period_data={0: wel_spd},
-    #     filename=f"{gwf_model_name}.wel0"
-    # )
-
-    chd2_spd = [[(0, 0, 0), 0.0, *bc],]
-    # chd2_spd = [[(0, 0, 0), 0.0],]
-    flopy.mf6.ModflowGwfchd(
-        gwf_model,
-        pname='bushui',
-        save_flows=True,
-        maxbound=len(chd2_spd),
-        stress_period_data={0: chd2_spd},
-        auxiliary=species_list,
-        filename=f"{gwf_model_name}.bushui.chd"
+        filename=f"{gwf_model_name}.fixed_heads.chd"
     )
 
     flopy.mf6.ModflowGwfoc(
@@ -146,26 +129,10 @@ def transport_model(
         pname='oc',
         budget_filerecord=f'{gwf_model_name}.bud',
         head_filerecord=f'{gwf_model_name}.hds',
-        saverecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')],
-        printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
+        saverecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
     )
 
 # ! ######################### 各种离子溶质运移模型 ######################### ! #
-
-    # ! src --------------------------------------------------
-    src_data_list = []
-    # 遍历所有网格 (Layer, Row, Col) 注意 flopy 使用 0-based 索引
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                cellid = (k, i, j)
-                # 格式: (cellid, smassrate, [aux], [boundname])
-                # 这里只填最基本的: ((k, i, j), 0.0)
-                src_data_list.append((cellid, 0.0))
-    
-    # 确定最大边界数，这对于内存分配非常重要
-    src_maxbound = len(src_data_list)
-    # ! src --------------------------------------------------
 
     # ! 将输入的 phreeqcrm 的一维数组转换成字典格式
     species_conc = {}
@@ -176,9 +143,11 @@ def transport_model(
 
     nouter, ninner = 50, 100
     hclose, rclose, relax = 1e-6, 1e-6, 1.0
-    alh = 0.0       # 纵向弥散度 使用 alh 和 alv 设置纵向弥散系数
-    ath1 = alh / 10 # 使用 ath1, ath2, atv 设置横向弥散系数
-    diffc = 6.089e-5     # 分子扩散系数
+    alh = 0.0
+    ath1 = 0.0
+    # MODFLOW 6 DIFFC is the pore diffusion coefficient Dp = tau * D0.
+    # Xie et al. use tau = porosity**(1/3) and D0 = 1e-9 m2/s.
+    diffc = porosity ** (1.0 / 3.0) * d0
 
     bc_conc_map = dict(zip(species_list, bc))
 
@@ -221,7 +190,9 @@ def transport_model(
 
         flopy.mf6.ModflowGwtic(gwt_model, strt=species_initial_conc, filename=f"{gwt_model_name}.ic")
 
-        flopy.mf6.ModflowGwtadv(gwt_model, scheme="TVD", filename=f"{gwt_model_name}.adv")
+        # Advection is absent in B4; this package has no numerical effect
+        # because the fixed-head gradient is zero.
+        flopy.mf6.ModflowGwtadv(gwt_model, scheme="UPSTREAM", filename=f"{gwt_model_name}.adv")
         
         flopy.mf6.ModflowGwtdsp(
             gwt_model, 
@@ -237,48 +208,41 @@ def transport_model(
             pname='mst',
             porosity=porosity, 
             filename=f"{gwt_model_name}.mst")
-        
-        # ! ---------------------------------------------------------------------
-        # 实例化 SRC 包
-        # ---------------------------------------------------------------------
-        flopy.mf6.ModflowGwtsrc(
-            gwt_model, 
-            # pname='SRC',          # 给包起个名字，方便查找
-            save_flows=True,      # 建议开启，方便检查注入量
-            maxbound=src_maxbound,# 关键：预分配全场内存
-            stress_period_data={0: src_data_list}, # 填入所有网格的 0.0 初始值
-            filename=f"{gwt_model_name}.src"
-        )
-        # ! ---------------------------------------------------------------------
-        
-        #  CNC 包定义替换 SSM 包定义 ###
-        # 从映射中获取当前物种的边界浓度值
-        current_bc_conc = bc_conc_map[species_name]
-        cnc_spd_list = [((0, 0, 0), current_bc_conc),]
-        cnc_spd_dict = {0: cnc_spd_list}
-        
-        sourcerecarray = [("bushui", "AUX", species_name)]
+
+        # MODFLOW 6 requires an SSM package whenever the coupled flow model
+        # has a boundary package. It is intentionally empty here: the CHD
+        # faces carry no flow and B4's solute boundary is supplied by CNC.
         flopy.mf6.ModflowGwtssm(
-            gwt_model, 
-            pname=f'{species_name}_ssm',
-            sources=sourcerecarray, 
+            gwt_model,
+            pname='ssm',
             filename=f"{gwt_model_name}.ssm"
         )
-        # 3. 实例化 ModflowGwtcnc 包
+        
+        # B4 uses first-type solute boundaries at both ends. The left half
+        # cell is fixed to SOLUTION 1 and the right half cell to the resident
+        # SOLUTION 0 composition.
+        current_bc_conc = bc_conc_map[species_name]
+        current_right_bc_conc = species_initial_conc[-1]
+        cnc_spd_list = [
+            ((0, 0, 0), current_bc_conc),
+            ((0, 0, ncol - 1), current_right_bc_conc),
+        ]
+        cnc_spd_dict = {0: cnc_spd_list}
+
         flopy.mf6.ModflowGwtcnc(
             gwt_model,
+            pname='fixed_cnc',
             maxbound=len(cnc_spd_list),
             stress_period_data=cnc_spd_dict,
             save_flows=False,
-            print_input=False,  # 推荐在调试时开启，以在列表文件中看到输入
-            filename=f"{gwt_model_name}.cnc" # 为每个包提供一个唯一的pname是好习惯
+            print_input=False,
+            filename=f"{gwt_model_name}.cnc"
         )
         
         flopy.mf6.ModflowGwtoc(
             gwt_model, 
             budget_filerecord=f"{gwt_model_name}.cbc", 
             concentration_filerecord=f"{gwt_model_name}.ucn",
-            budgetcsv_filerecord="{}.oc.csv".format(gwt_model_name),
             saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")]
         )
         
@@ -291,25 +255,6 @@ def transport_model(
         )
         
         gwt_models[species_name] = gwt_model
-
-# ! ######################### 更新密度 ######################### ! #
-    # buy_packagedata = [
-    #     (0, 24.8171, 0.0, 'gwt_Cl_model', "concentration"),
-    #     (1, 27.3688, 0.0, 'gwt_K_model',  "concentration"),
-    #     (2, 16.0929, 0.0, 'gwt_Na_model', "concentration"),
-    #     (3, 28.0546, 0.0, 'gwt_Ca_model', "concentration"),
-    #     (4, 17.0135, 0.0, 'gwt_Mg_model', "concentration"),
-    #     (5, 67.2427, 0.0, 'gwt_S_model',  "concentration"),
-    #     (6, 42.0056, 0.0, 'gwt_C_model',  "concentration"),
-    # ]
-    # flopy.mf6.ModflowGwfbuy(
-    #     gwf_model, 
-    #     denseref=1000.0,
-    #     nrhospecies=7, # len(buy_packagedata)
-    #     density_filerecord=['model_density.bin'],
-    #     packagedata=buy_packagedata,
-    #     filename=f"{gwf_model_name}.buy"
-    # )
 
 # ! ######################### 写入和运行模型 ######################### ! #
     sim.write_simulation(silent=False)

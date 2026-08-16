@@ -1,241 +1,195 @@
-import numpy as np
+"""MODFLOW 6 flow and transport model for PHT3D Example 3."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
 import flopy
 
+
+NLAY = 1
+NROW = 1
+NCOL = 80
+NXYZ = NLAY * NROW * NCOL
+
+CELL_LENGTH = 0.005
+POROSITY = 0.35
+LONGITUDINAL_DISPERSIVITY = 0.005
+SIMULATION_TIME = 24.0
+TIME_STEPS = 192
+INFLOW_RATE = 0.007
+
+
 def transport_model(
-    sim_ws=None,
-    perlen=24, 
-    nstp=192, 
-    bc=None,
-    species_list=None, 
-    initial_conc=None
-):
-
-    sim_name = 'model'
-    
-    nrow = 1
-    ncol = 80
-    nlay = 1
-    delr = [0.005] * ncol
-    delc = [1.0]
-    top = 1.0
-    botm = 0.0
-    hk = 0.056
-
-    steady = True
-
-    gwfname = f"gwf_{sim_name}"
-    
-    nper = 1
-    perlen = np.array([perlen])
-    nstp = [nstp]
-    steady = [steady]
-    
+    *,
+    sim_ws: str | Path,
+    species_list: list[str],
+    initial_conc,
+    inflow_concentrations,
+    mf6_exe: str | Path,
+) -> flopy.mf6.MFSimulation:
+    """Write the one-dimensional benchmark flow and transport simulation."""
     sim = flopy.mf6.MFSimulation(
-        sim_name=gwfname, 
-        sim_ws=sim_ws, 
-        exe_name='./bin/mf6.7.0/mf6.exe',
-        verbosity_level=0
+        sim_name="model",
+        sim_ws=sim_ws,
+        exe_name=str(mf6_exe),
+        verbosity_level=0,
     )
-    
     flopy.mf6.ModflowTdis(
         sim,
-        pname='tdis',
-        time_units='DAYS',
-        nper=nper,
-        perioddata=[(perlen[0], nstp[0], 1.0)]
+        time_units="DAYS",
+        nper=1,
+        perioddata=[(SIMULATION_TIME, TIME_STEPS, 1.0)],
     )
-    
-    gwf = flopy.mf6.ModflowGwf(sim, modelname=gwfname, save_flows=True)
-    
-    ic = flopy.mf6.ModflowIms(
+
+    gwf_name = "gwf_model"
+    gwf = flopy.mf6.ModflowGwf(sim, modelname=gwf_name, save_flows=True)
+    flow_ims = flopy.mf6.ModflowIms(
         sim,
-        pname='ims',
-        complexity='SIMPLE',
-        outer_dvclose=1.0e-8,
+        pname="flow_ims",
+        complexity="SIMPLE",
+        outer_dvclose=1.0e-10,
         outer_maximum=50,
-        under_relaxation='NONE',
         inner_maximum=100,
-        inner_dvclose=1.0e-9,
+        inner_dvclose=1.0e-10,
         rcloserecord=1.0e-10,
-        linear_acceleration='CG',
-        scaling_method='NONE',
-        reordering_method='NONE',
-        relaxation_factor=0.97
+        linear_acceleration="CG",
+        relaxation_factor=0.97,
     )
-    sim.register_ims_package(ic, [gwf.name])
-    
+    sim.register_ims_package(flow_ims, [gwf.name])
+
     flopy.mf6.ModflowGwfdis(
         gwf,
-        pname='dis',
-        nlay=nlay,
-        nrow=nrow,
-        ncol=ncol,
-        delr=delr,
-        delc=delc,
-        top=top,
-        botm=botm
+        nlay=NLAY,
+        nrow=NROW,
+        ncol=NCOL,
+        delr=CELL_LENGTH,
+        delc=1.0,
+        top=1.0,
+        botm=0.0,
     )
-    
-    ic = flopy.mf6.ModflowGwfic(gwf, pname='ic', strt=1.0)
-    
+    flopy.mf6.ModflowGwfic(gwf, strt=1.0)
     flopy.mf6.ModflowGwfnpf(
         gwf,
-        pname='npf',
         save_flows=True,
+        save_specific_discharge=True,
         icelltype=0,
-        k=hk
+        k=0.056,
     )
-    
-    flopy.mf6.ModflowGwfsto(gwf, pname='sto', save_flows=True, iconvert=1, ss=0.0, sy=0.0) # ss=1.0e-5, sy=0.1
-    
-    chd_spd = [[(0, 0, ncol-1), 1.0]]
-    flopy.mf6.ModflowGwfchd(
+    flopy.mf6.ModflowGwfsto(
         gwf,
-        pname='chd',
-        save_flows=True,
-        maxbound=len(chd_spd),
-        stress_period_data={0: chd_spd}
+        iconvert=0,
+        ss=0.0,
+        sy=0.0,
+        steady_state={0: True},
     )
-    
-    wel_spd = [[(0, 0, 0), 0.007, *bc]]
+
+    # These are the MODFLOW-2000 boundaries used to create the official
+    # MT3D.FLO file: a 0.007 m3/d well in cell 1 and fixed head in cell 80.
     flopy.mf6.ModflowGwfwel(
         gwf,
-        pname='WEL-1',
+        pname="WEL-1",
         save_flows=True,
-        maxbound=len(wel_spd),
-        stress_period_data={0: wel_spd},
-        auxiliary=species_list
+        stress_period_data={
+            0: [[(0, 0, 0), INFLOW_RATE, *inflow_concentrations]]
+        },
+        auxiliary=species_list,
     )
-
+    flopy.mf6.ModflowGwfchd(
+        gwf,
+        pname="CHD-OUTFLOW",
+        save_flows=True,
+        stress_period_data={0: [[(0, 0, NCOL - 1), 1.0]]},
+    )
     flopy.mf6.ModflowGwfoc(
         gwf,
-        pname='oc',
-        budget_filerecord=f'{gwfname}.bud',
-        head_filerecord=f'{gwfname}.hds',
-        saverecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')],
-        printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
+        budget_filerecord=f"{gwf_name}.bud",
+        head_filerecord=f"{gwf_name}.hds",
+        saverecord=[("HEAD", "LAST"), ("BUDGET", "LAST")],
     )
 
-# ! ######################### 各种离子溶质运移模型 ######################### ! #
+    species_concentrations = {
+        name: initial_conc[index * NXYZ : (index + 1) * NXYZ]
+        for index, name in enumerate(species_list)
+    }
 
-    # ! 将输入的 phreeqcrm 的一维数组转换成字典格式
-    species_conc = {}
-    for i in range(len(species_list)):
-        start = i * nlay * nrow * ncol
-        end = (i + 1) * nlay * nrow * ncol
-        species_conc[species_list[i]] = initial_conc[start:end]
-
-    # ! src --------------------------------------------------
-    src_data_list = []
-    for k in range(nlay):
-        for i in range(nrow):
-            for j in range(ncol):
-                cellid = (k, i, j)
-                # (cellid, smassrate, [aux], [boundname])
-                src_data_list.append((cellid, 0.0))
-    src_maxbound = len(src_data_list)
-    # ! src --------------------------------------------------
-    
-    gwt_models = {}
-    for species_name, species_initial_conc in species_conc.items():
-        nouter, ninner = 50, 100
-        hclose, rclose, relax = 1e-6, 1e-6, 1.0
-        porosity = 0.35
-        alh = 0.005
-        ath1 =  0.0005
-        diffc = 0.0
-        
-        gwtname = f"gwt_{species_name}_{sim.name.split('_')[1]}"
-        
+    for species_name, species_initial_conc in species_concentrations.items():
+        gwt_name = f"gwt_{species_name}_model"
         gwt = flopy.mf6.ModflowGwt(
             sim,
-            modelname=gwtname,
-            save_flows=True, 
-            model_nam_file=f"{gwtname}.nam"
+            modelname=gwt_name,
+            save_flows=True,
+            model_nam_file=f"{gwt_name}.nam",
         )
-        
-        imsgwt = flopy.mf6.ModflowIms(
-            sim, 
-            print_option="SUMMARY", 
-            outer_dvclose=hclose, 
-            outer_maximum=nouter,
-            under_relaxation="NONE", 
-            inner_maximum=ninner, 
-            inner_dvclose=hclose,
-            rcloserecord=rclose, 
+        transport_ims = flopy.mf6.ModflowIms(
+            sim,
+            print_option="SUMMARY",
+            outer_dvclose=1.0e-10,
+            outer_maximum=50,
+            inner_maximum=100,
+            inner_dvclose=1.0e-10,
+            rcloserecord=1.0e-10,
             linear_acceleration="BICGSTAB",
-            scaling_method="NONE", 
-            reordering_method="NONE",
-            relaxation_factor=relax, 
-            filename=f"{gwtname}.ims"
+            relaxation_factor=1.0,
+            filename=f"{gwt_name}.ims",
         )
-        sim.register_ims_package(imsgwt, [gwt.name])
-        
-        flopy.mf6.ModflowGwtdis(
-            gwt, 
-            nlay=gwf.dis.nlay.get_data(), 
-            nrow=gwf.dis.nrow.get_data(), 
-            ncol=gwf.dis.ncol.get_data(), 
-            delr=gwf.dis.delr.array, 
-            delc=gwf.dis.delc.array, 
-            top=gwf.dis.top.array,
-            botm=gwf.dis.botm.array, 
-            idomain=1, 
-            filename=f"{gwtname}.dis"
-        )
+        sim.register_ims_package(transport_ims, [gwt.name])
 
+        flopy.mf6.ModflowGwtdis(
+            gwt,
+            nlay=NLAY,
+            nrow=NROW,
+            ncol=NCOL,
+            delr=CELL_LENGTH,
+            delc=1.0,
+            top=1.0,
+            botm=0.0,
+            filename=f"{gwt_name}.dis",
+        )
         flopy.mf6.ModflowGwtic(
             gwt,
             strt=species_initial_conc,
-            filename=f"{gwtname}.ic"
+            filename=f"{gwt_name}.ic",
         )
-        
-        flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwtname}.adv")
-        
-        flopy.mf6.ModflowGwtdsp(
-            gwt, 
-            xt3d_off=True, 
-            alh=alh, #alv=alv,
-            ath1=ath1, #atv=atv,
-            diffc=diffc,
-            filename=f"{gwtname}.dsp"
-        )
-
-        # ---------------------------------------------------------------------
-        flopy.mf6.ModflowGwtsrc(
+        # PHT3D uses MMOC, which GWT does not provide.  CENTRAL is stable for
+        # this grid (cell Peclet number = delr/alh = 1) and gave the closest
+        # match among GWT's available schemes.
+        flopy.mf6.ModflowGwtadv(
             gwt,
-            pname='SRC',
-            save_flows=True,
-            maxbound=src_maxbound,
-            stress_period_data={0: src_data_list},
-            filename=f"{gwtname}.src"
+            scheme="CENTRAL",
+            filename=f"{gwt_name}.adv",
         )
-        # ! ---------------------------------------------------------------------
-
-        flopy.mf6.ModflowGwtmst(gwt, porosity=porosity, filename=f"{gwtname}.mst")
-        
-        sourcerecarray = [("WEL-1", "AUX", species_name)]
+        flopy.mf6.ModflowGwtdsp(
+            gwt,
+            xt3d_off=True,
+            alh=LONGITUDINAL_DISPERSIVITY,
+            ath1=0.1 * LONGITUDINAL_DISPERSIVITY,
+            diffc=0.0,
+            filename=f"{gwt_name}.dsp",
+        )
+        flopy.mf6.ModflowGwtmst(
+            gwt,
+            porosity=POROSITY,
+            filename=f"{gwt_name}.mst",
+        )
         flopy.mf6.ModflowGwtssm(
-            gwt, 
-            sources=sourcerecarray, 
-            filename=f"{gwtname}.ssm"
+            gwt,
+            sources=[("WEL-1", "AUX", species_name)],
+            filename=f"{gwt_name}.ssm",
         )
-        
         flopy.mf6.ModflowGwtoc(
-            gwt, 
-            budget_filerecord=f"{gwtname}.cbc", 
-            concentration_filerecord=f"{gwtname}.ucn",
-            saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")]
+            gwt,
+            budget_filerecord=f"{gwt_name}.cbc",
+            concentration_filerecord=f"{gwt_name}.ucn",
+            saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")],
         )
-        
         flopy.mf6.ModflowGwfgwt(
-            sim, 
-            exgtype="GWF6-GWT6", 
-            exgmnamea=gwfname, 
-            exgmnameb=gwtname, 
-            filename=f"{gwtname}.gwfgwt"
+            sim,
+            exgtype="GWF6-GWT6",
+            exgmnamea=gwf_name,
+            exgmnameb=gwt_name,
+            filename=f"{gwt_name}.gwfgwt",
         )
-        
-        gwt_models[species_name] = gwt
-    
-    sim.write_simulation()
+
+    sim.write_simulation(silent=True)
+    return sim

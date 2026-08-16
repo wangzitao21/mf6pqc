@@ -1,0 +1,356 @@
+SOLUTION 0 Ambient groundwater
+    units mol/L
+    temp 15.0
+    pH 7.288
+    pe -4.007
+    Benz_l 0
+    Benz_h 0
+    Tolu_l 0
+    Tolu_h 0
+    Ethyl_l 0
+    Ethyl_h 0
+    Xyl_l 0
+    Xyl_h 0
+    Oxyl_l 0
+    Oxyl_h 0
+    Naph_l 0
+    Naph_h 0
+    Ace 0
+    Fluorene 0
+    Sulf_l(6) 2.192e-3
+    Sulf_h(6) 1.021e-4
+    Sulfid_l(-2) 6.269e-8
+    Sulfid_h(-2) 6.094e-12
+    O(0) 0
+    Ca 4.629e-3
+    Mg 7.748e-4
+    Na 2.488e-3
+    K 2.943e-4
+    Fe(2) 5.871e-10
+    Fe(3) 1.115e-14
+    Cl 3.007e-3
+    C(4) 6.652e-3
+    N 1.0e-4
+END
+
+SOLUTION 1 Oxygenated recharge
+    units mol/L
+    temp 15.0
+    pH 7.288
+    pe 14.286
+    Benz_l 0
+    Benz_h 0
+    Tolu_l 0
+    Tolu_h 0
+    Ethyl_l 0
+    Ethyl_h 0
+    Xyl_l 0
+    Xyl_h 0
+    Oxyl_l 0
+    Oxyl_h 0
+    Naph_l 0
+    Naph_h 0
+    Ace 0
+    Fluorene 0
+    Sulf_l(6) 2.192e-3
+    Sulf_h(6) 1.021e-4
+    Sulfid_l(-2) 0
+    Sulfid_h(-2) 0
+    O(0) 1.219e-3
+    Ca 4.629e-3
+    Mg 7.75e-4
+    Na 2.488e-3
+    K 2.94e-4
+    Fe(2) 0
+    Fe(3) 0
+    Cl 3.007e-3
+    C(4) 6.652e-3
+    N 1.0e-4
+END
+
+EQUILIBRIUM_PHASES 1
+    Calcite 0.41 3.333333
+    Goethite 0.0 3.333333
+    Pyrite 0.0 0.0
+END
+
+KINETICS 0 Background
+    Benz_l
+        -parms 2.5e-5 3.0e-5
+        -m0 10
+        -formula Benz_l -1 H2O -2.64 H+ -1.38 HCO3- 5.4
+    Benz_h
+        -parms -3.6
+        -m0 10
+        -formula Benz_h -1 H2O -2.64 H+ -1.38 HCO3- 5.4
+    Tolu_l
+        -parms 5.0e-4 3.0e-5
+        -m0 10
+        -formula Tolu_l -1 H2O -2.58 H+ -1.86 HCO3- 6.3
+    Tolu_h
+        -parms -2.0
+        -m0 10
+        -formula Tolu_h -1 H2O -2.58 H+ -1.86 HCO3- 6.3
+    Ethyl_l
+        -parms 1.0e-4 3.0e-5
+        -m0 10
+        -formula Ethyl_l -1 H2O -2.52 H+ -2.34 HCO3- 7.2
+    Ethyl_h
+        -parms -3.7
+        -m0 10
+        -formula Ethyl_h -1 H2O -2.52 H+ -2.34 HCO3- 7.2
+    Xyl_l
+        -parms 7.5e-5 3.0e-5
+        -m0 10
+        -formula Xyl_l -1 H2O -2.34 H+ -1.86 HCO3- 7.2
+    Xyl_h
+        -parms -1.8
+        -m0 10
+        -formula Xyl_h -1 H2O -2.34 H+ -1.86 HCO3- 7.2
+    Oxyl_l
+        -parms 1.0e-4 3.0e-5
+        -m0 10
+        -formula Oxyl_l -1 H2O -2.34 H+ -1.86 HCO3- 7.2
+    Oxyl_h
+        -parms -1.5
+        -m0 10
+        -formula Oxyl_h -1 H2O -2.34 H+ -1.86 HCO3- 7.2
+    Naph_l
+        -parms 1.0e-4 3.0e-5
+        -m0 10
+        -formula Naph_l -1 H2O -5.40 H+ -1.80 HCO3- 9.0
+    Naph_h
+        -parms -1.1
+        -m0 10
+        -formula Naph_h -1 H2O -5.40 H+ -1.80 HCO3- 9.0
+    Ace
+        -parms 0 3.0e-5
+        -m0 10
+        -formula Ace -1 H2O -6.28 H+ -2.26 HCO3- 10.8
+    Fluorene
+        -parms 0 3.0e-5
+        -m0 10
+        -formula Fluorene -1 H2O -7.22 H+ -2.24 HCO3- 11.7
+    Sulf_l(6)
+        -parms 1.0e-4
+        -m0 10
+        -formula Sulf_lO4-2 -1 H2Sulfid_l 1
+    Sulf_h(6)
+        -parms -13
+        -m0 10
+        -formula Sulf_hO4-2 -1 H2Sulfid_h 1
+    Sulfid_l(-2)
+        -parms 0
+        -m0 10
+        -formula H2Sulfid_l 0
+    Sulfid_h(-2)
+        -parms 0
+        -m0 10
+        -formula H2Sulfid_h 0
+    Benznapl
+        -parms 1.0e-4 6.0e-5
+        -m0 0
+        -formula Benz_l 0.989150872302019 Benz_h 0.0108491276979814
+    Tolunapl
+        -parms 1.0e-4 0.155
+        -m0 0
+        -formula Tolu_l 0.9891624689 Tolu_h 0.0108375311
+    Ethylnapl
+        -parms 1.0e-4 0.0225
+        -m0 0
+        -formula Ethyl_l 0.9891613694 Ethyl_h 0.0108386306
+    Xylnapl
+        -parms 1.0e-4 0.210
+        -m0 0
+        -formula Xyl_l 0.9891569715 Xyl_h 0.0108430285
+    Oxylnapl
+        -parms 1.0e-4 0.100
+        -m0 0
+        -formula Oxyl_l 0.9891604608 Oxyl_h 0.0108395392
+    Naphnapl
+        -parms 1.0e-4 0.400
+        -m0 0
+        -formula Naph_l 0.9891569715 Naph_h 0.0108430285
+    Acenapl
+        -parms 1.0e-4 0.08235
+        -m0 0
+        -formula Ace 1
+    Flnnapl
+        -parms 1.0e-4 0.110
+        -m0 0
+        -formula Fluorene 1
+    Sulfred
+        -parms 1.0e-5 1.0e-6
+        -m0 1.0e-7
+        -formula C5H7O2N 1
+END
+
+KINETICS 1 NAPL source
+    Benz_l
+        -parms 2.5e-5 3.0e-5
+        -m0 10
+        -formula Benz_l -1 H2O -2.64 H+ -1.38 HCO3- 5.4
+    Benz_h
+        -parms -3.6
+        -m0 10
+        -formula Benz_h -1 H2O -2.64 H+ -1.38 HCO3- 5.4
+    Tolu_l
+        -parms 5.0e-4 3.0e-5
+        -m0 10
+        -formula Tolu_l -1 H2O -2.58 H+ -1.86 HCO3- 6.3
+    Tolu_h
+        -parms -2.0
+        -m0 10
+        -formula Tolu_h -1 H2O -2.58 H+ -1.86 HCO3- 6.3
+    Ethyl_l
+        -parms 1.0e-4 3.0e-5
+        -m0 10
+        -formula Ethyl_l -1 H2O -2.52 H+ -2.34 HCO3- 7.2
+    Ethyl_h
+        -parms -3.7
+        -m0 10
+        -formula Ethyl_h -1 H2O -2.52 H+ -2.34 HCO3- 7.2
+    Xyl_l
+        -parms 7.5e-5 3.0e-5
+        -m0 10
+        -formula Xyl_l -1 H2O -2.34 H+ -1.86 HCO3- 7.2
+    Xyl_h
+        -parms -1.8
+        -m0 10
+        -formula Xyl_h -1 H2O -2.34 H+ -1.86 HCO3- 7.2
+    Oxyl_l
+        -parms 1.0e-4 3.0e-5
+        -m0 10
+        -formula Oxyl_l -1 H2O -2.34 H+ -1.86 HCO3- 7.2
+    Oxyl_h
+        -parms -1.5
+        -m0 10
+        -formula Oxyl_h -1 H2O -2.34 H+ -1.86 HCO3- 7.2
+    Naph_l
+        -parms 1.0e-4 3.0e-5
+        -m0 10
+        -formula Naph_l -1 H2O -5.40 H+ -1.80 HCO3- 9.0
+    Naph_h
+        -parms -1.1
+        -m0 10
+        -formula Naph_h -1 H2O -5.40 H+ -1.80 HCO3- 9.0
+    Ace
+        -parms 0 3.0e-5
+        -m0 10
+        -formula Ace -1 H2O -6.28 H+ -2.26 HCO3- 10.8
+    Fluorene
+        -parms 0 3.0e-5
+        -m0 10
+        -formula Fluorene -1 H2O -7.22 H+ -2.24 HCO3- 11.7
+    Sulf_l(6)
+        -parms 1.0e-4
+        -m0 10
+        -formula Sulf_lO4-2 -1 H2Sulfid_l 1
+    Sulf_h(6)
+        -parms -13
+        -m0 10
+        -formula Sulf_hO4-2 -1 H2Sulfid_h 1
+    Sulfid_l(-2)
+        -parms 0
+        -m0 10
+        -formula H2Sulfid_l 0
+    Sulfid_h(-2)
+        -parms 0
+        -m0 10
+        -formula H2Sulfid_h 0
+    Benznapl
+        -parms 1.0e-4 6.0e-5
+        -m0 1
+        -formula Benz_l 0.989150872302019 Benz_h 0.0108491276979814
+    Tolunapl
+        -parms 1.0e-4 0.155
+        -m0 1
+        -formula Tolu_l 0.9891624689 Tolu_h 0.0108375311
+    Ethylnapl
+        -parms 1.0e-4 0.0225
+        -m0 1
+        -formula Ethyl_l 0.9891613694 Ethyl_h 0.0108386306
+    Xylnapl
+        -parms 1.0e-4 0.210
+        -m0 1
+        -formula Xyl_l 0.9891569715 Xyl_h 0.0108430285
+    Oxylnapl
+        -parms 1.0e-4 0.100
+        -m0 1
+        -formula Oxyl_l 0.9891604608 Oxyl_h 0.0108395392
+    Naphnapl
+        -parms 1.0e-4 0.400
+        -m0 1
+        -formula Naph_l 0.9891569715 Naph_h 0.0108430285
+    Acenapl
+        -parms 1.0e-4 0.08235
+        -m0 1
+        -formula Ace 1
+    Flnnapl
+        -parms 1.0e-4 0.110
+        -m0 1
+        -formula Fluorene 1
+    Sulfred
+        -parms 1.0e-5 1.0e-6
+        -m0 1.0e-7
+        -formula C5H7O2N 1
+END
+
+USER_PUNCH 1
+    -headings Benz_l Benz_h Tolu_l Tolu_h Ethyl_l Ethyl_h Xyl_l Xyl_h Oxyl_l Oxyl_h Naph_l Naph_h Ace Fluorene Sulf_l_6 Sulf_h_6 Sulfid_l_m2 Sulfid_h_m2 O_0 Ca Mg Na K Fe_2 Fe_3 Cl C_4 N pH pe Benznapl Tolunapl Ethylnapl Xylnapl Oxylnapl Naphnapl Acenapl Flnnapl Sulfred Calcite Goethite Pyrite
+    -start
+    10 PUNCH TOT("Benz_l") * TOT("water") / SOLN_VOL
+    20 PUNCH TOT("Benz_h") * TOT("water") / SOLN_VOL
+    30 PUNCH TOT("Tolu_l") * TOT("water") / SOLN_VOL
+    40 PUNCH TOT("Tolu_h") * TOT("water") / SOLN_VOL
+    50 PUNCH TOT("Ethyl_l") * TOT("water") / SOLN_VOL
+    60 PUNCH TOT("Ethyl_h") * TOT("water") / SOLN_VOL
+    70 PUNCH TOT("Xyl_l") * TOT("water") / SOLN_VOL
+    80 PUNCH TOT("Xyl_h") * TOT("water") / SOLN_VOL
+    90 PUNCH TOT("Oxyl_l") * TOT("water") / SOLN_VOL
+    100 PUNCH TOT("Oxyl_h") * TOT("water") / SOLN_VOL
+    110 PUNCH TOT("Naph_l") * TOT("water") / SOLN_VOL
+    120 PUNCH TOT("Naph_h") * TOT("water") / SOLN_VOL
+    130 PUNCH TOT("Ace") * TOT("water") / SOLN_VOL
+    140 PUNCH TOT("Fluorene") * TOT("water") / SOLN_VOL
+    150 PUNCH TOT("Sulf_l(6)") * TOT("water") / SOLN_VOL
+    160 PUNCH TOT("Sulf_h(6)") * TOT("water") / SOLN_VOL
+    170 PUNCH TOT("Sulfid_l(-2)") * TOT("water") / SOLN_VOL
+    180 PUNCH TOT("Sulfid_h(-2)") * TOT("water") / SOLN_VOL
+    190 PUNCH TOT("O(0)") * TOT("water") / SOLN_VOL
+    200 PUNCH TOT("Ca") * TOT("water") / SOLN_VOL
+    210 PUNCH TOT("Mg") * TOT("water") / SOLN_VOL
+    220 PUNCH TOT("Na") * TOT("water") / SOLN_VOL
+    230 PUNCH TOT("K") * TOT("water") / SOLN_VOL
+    240 PUNCH TOT("Fe(2)") * TOT("water") / SOLN_VOL
+    250 PUNCH TOT("Fe(3)") * TOT("water") / SOLN_VOL
+    260 PUNCH TOT("Cl") * TOT("water") / SOLN_VOL
+    270 PUNCH TOT("C(4)") * TOT("water") / SOLN_VOL
+    280 PUNCH TOT("N") * TOT("water") / SOLN_VOL
+    290 PUNCH -LA("H+")
+    300 PUNCH -LA("e-")
+    310 PUNCH KIN("Benznapl")
+    320 PUNCH KIN("Tolunapl")
+    330 PUNCH KIN("Ethylnapl")
+    340 PUNCH KIN("Xylnapl")
+    350 PUNCH KIN("Oxylnapl")
+    360 PUNCH KIN("Naphnapl")
+    370 PUNCH KIN("Acenapl")
+    380 PUNCH KIN("Flnnapl")
+    390 PUNCH KIN("Sulfred")
+    # PHT3D reports mineral inventories per litre of bulk aquifer. The
+    # PhreeqcRM reaction cell represents one litre of pore water here.
+    400 PUNCH EQUI("Calcite") * 0.30
+    410 PUNCH EQUI("Goethite") * 0.30
+    420 PUNCH EQUI("Pyrite") * 0.30
+    -end
+END
+
+SELECTED_OUTPUT 1
+    -reset false
+    -high_precision true
+END
+
+PRINT
+    -warnings 0
+END

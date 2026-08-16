@@ -53,7 +53,6 @@ transport_model(
 )
 
 simulator.run()
-# simulator.run_SIA()
 simulator.save_results()
 
 simulator.finalize()

@@ -1,7 +1,6 @@
 import os
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -11,9 +10,24 @@ from modflow_model import transport_model
 
 nlay, nrow, ncol = 1, 40, 80
 
-example_dir = './examples/PHT3D_E10'
+example_dir = os.path.dirname(os.path.abspath(__file__))
+input_data_dir = os.path.join(example_dir, "input_data")
+repo_dir = os.path.dirname(os.path.dirname(example_dir))
+output_dir = os.path.join(example_dir, "output")
+simulation_dir = os.path.join(example_dir, "simulation")
+os.makedirs(output_dir, exist_ok=True)
+for filename in (
+    "results.npy",
+    "results_headings.txt",
+    "results_times.npy",
+    "results_manifest.json",
+):
+    try:
+        os.remove(os.path.join(output_dir, filename))
+    except FileNotFoundError:
+        pass
 
-kinetics_mask = np.load("./examples/PHT3D_E10/input_data/init_Benznapl.npy").ravel()
+kinetics_mask = np.load(os.path.join(input_data_dir, "init_Benznapl.npy")).ravel()
 kinetics_mask[kinetics_mask == 0.2] = 1
 kinetics_mask = kinetics_mask.astype(int)
 
@@ -23,7 +37,8 @@ ic_mapping = {
     'kinetics': kinetics_mask,
 }
 
-hk = np.load("./examples/PHT3D_E10/input_data/hk.npy").reshape(nlay, nrow, ncol)
+hk = np.load(os.path.join(input_data_dir, "hk.npy")).reshape(nlay, nrow, ncol)
+strt = np.load(os.path.join(input_data_dir, "strt.npy")).reshape(nlay, nrow, ncol)
 
 sim_params = {
     "case_name": "PHT3D_E10",
@@ -41,9 +56,9 @@ sim_params = {
 
     "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
     "pqi_path": os.path.join(example_dir, "input_data/input.pqi"),
-    "modflow_dll_path": "./bin/mf6.7.0/libmf6.dll",
-    "workspace": os.path.join(example_dir, "simulation"),
-    "output_dir": os.path.join(example_dir, "output"),
+    "modflow_dll_path": os.path.join(repo_dir, "bin", "mf6.7.0", "libmf6.dll"),
+    "workspace": simulation_dir,
+    "output_dir": output_dir,
 
     "if_update_porosity_K": False,
     "if_update_density": False,
@@ -54,23 +69,31 @@ sim_params = {
 simulator = mf6pqc(**sim_params)
 initial_concentrations = simulator.setup(ic_map=ic_mapping)
 
-bc_conc_1 = simulator.get_initial_concentrations(0)
-bc_conc_15 = simulator.get_initial_concentrations(1)
+# In the template, the left ICBUND=-1 cells retain the background starting
+# concentrations. Therefore SOLUTION 0 initializes both the aquifer and the
+# fixed-concentration inflow boundary.
+background_concentrations = simulator.get_initial_concentrations(0)
 
 components = simulator.get_components()
 
 transport_model(
-    sim_ws=os.path.join(example_dir, 'simulation'),
+    sim_ws=simulation_dir,
     species_list=components,
     initial_conc=initial_concentrations,
-    bc_1=bc_conc_1,
-    bc_15=bc_conc_15,
-    hk=hk
+    inflow_concentrations=background_concentrations,
+    hk=hk,
+    initial_head=strt,
+    mf6_exe=os.path.join(repo_dir, "bin", "mf6.7.0", "mf6.exe"),
 )
 
-simulator.run()
-simulator.save_results()
-simulator.finalize()
+try:
+    simulator.run()
+    # Close native backends before replacing output files on Windows. Some
+    # file-indexing/preview processes otherwise keep the previous result open.
+    simulator.finalize()
+    simulator.save_results()
+finally:
+    simulator.finalize()
 
 print("\n-------------------------------------------")
 print(f"'{sim_params['case_name']}' done.")

@@ -1,19 +1,16 @@
 import flopy
 import numpy as np
-import matplotlib.pyplot as plt
-import os
-from flopy.utils import CellBudgetFile
 
 def transport_model(
     
     nrow=1,
-    ncol=80,
+    ncol=81,
     nlay=1,
 
     sim_ws="",
     species_list=["Ca", "Mg", "Cl"],
-    perlen=365*10,
-    nstp=1000*10,
+    perlen=365.0 * 100,
+    nstp=146000,
     initial_conc=np.ones(120000) * 0.05,
     bc=[0.1, 0.1, 0.1],
     porosity=0.35,
@@ -23,20 +20,25 @@ def transport_model(
 
     gwf_model_name = 'gwf_model'
 
-    delr = [0.025] * ncol
+    if ncol != 81:
+        raise ValueError("B3 requires 81 cells: two boundary half cells and 79 interior cells")
+    delr = [0.0125] + [0.025] * 79 + [0.0125]
     delc = [1.0]
     top = 1.0
     botm = 0
 
-    nper = 1
-    tsmult = 1.0
+    # A 0.25-day step gives an initial Courant number of approximately one:
+    # (K * dh/L / porosity) * dt/dx = (10 * 0.007/2 / 0.35) * 0.25/0.025 = 1.
+    perioddata = [(perlen, nstp, 1.0)]
+    nper = len(perioddata)
 
     hk = K11
+    boundary_conductance = 10.0 / 0.00625
     
     sim = flopy.mf6.MFSimulation(
         sim_name="model",
         sim_ws=sim_ws,
-        exe_name='./bin/mf6.exe',
+        exe_name='./bin/mf6.7.0/mf6.exe',
         verbosity_level=0
     )
 
@@ -45,13 +47,13 @@ def transport_model(
         pname='tdis',
         time_units='DAYS',
         nper=nper,
-        perioddata=[(perlen, nstp, tsmult)]
+        perioddata=perioddata
     )
 
     gwf_model = flopy.mf6.ModflowGwf(
         sim, 
         modelname=gwf_model_name, 
-        save_flows=False
+        save_flows=True
     )
     
     ims = flopy.mf6.ModflowIms(
@@ -61,12 +63,12 @@ def transport_model(
         outer_dvclose=1.0e-8,
         outer_maximum=50,
         under_relaxation='NONE',
-        inner_maximum=100,
+        inner_maximum=500,
         inner_dvclose=1.0e-9,
-        rcloserecord=1.0e-10,
-        linear_acceleration='CG',
-        scaling_method='NONE',
-        reordering_method='NONE',
+        rcloserecord=1.0e-8,
+        linear_acceleration='BICGSTAB',
+        scaling_method='DIAGONAL',
+        reordering_method='RCM',
         relaxation_factor=0.97
     )
     sim.register_ims_package(ims, [gwf_model.name])
@@ -109,25 +111,25 @@ def transport_model(
         sy=0.0
     )
 
-    chd_spd = [[(0, 0, ncol-1),0.00004375]] # 0.0
-    flopy.mf6.ModflowGwfchd(
+    ghb_spd = [[(0, 0, ncol-1), 0.0, boundary_conductance]]
+    flopy.mf6.ModflowGwfghb(
         gwf_model,
-        pname='chd',
+        pname='ghb_right',
         save_flows=True,
-        maxbound=len(chd_spd),
-        stress_period_data={0: chd_spd},
-        filename=f"{gwf_model_name}.choushui.chd"
+        maxbound=len(ghb_spd),
+        stress_period_data={0: ghb_spd},
+        filename=f"{gwf_model_name}.choushui.ghb"
     )
 
-    chd2_spd = [[(0, 0, 0), 0.00695625, *bc],] # 0.007
-    flopy.mf6.ModflowGwfchd(
+    ghb2_spd = [[(0, 0, 0), 0.007, boundary_conductance, *bc]]
+    flopy.mf6.ModflowGwfghb(
         gwf_model,
         pname='bushui',
         save_flows=True,
-        maxbound=len(chd2_spd),
-        stress_period_data={0: chd2_spd},
+        maxbound=len(ghb2_spd),
+        stress_period_data={0: ghb2_spd},
         auxiliary=species_list,
-        filename=f"{gwf_model_name}.bushui.chd"
+        filename=f"{gwf_model_name}.bushui.ghb"
     )
 
     # ghb_spd = [[(0, 0, ncol-1), 0.0, 800.0]] 
@@ -156,8 +158,7 @@ def transport_model(
         pname='oc',
         budget_filerecord=f'{gwf_model_name}.bud',
         head_filerecord=f'{gwf_model_name}.hds',
-        saverecord=[('HEAD', 'ALL'), ('BUDGET', 'LAST')],
-        printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
+        saverecord=[('HEAD', 'ALL'), ('BUDGET', 'LAST')]
     )
 
 # ! ######################### 各种离子溶质运移模型 ######################### ! #
@@ -214,7 +215,9 @@ def transport_model(
 
         flopy.mf6.ModflowGwtic(gwt_model, strt=species_initial_conc, filename=f"{gwt_model_name}.ic")
 
-        flopy.mf6.ModflowGwtadv(gwt_model, scheme="TVD", filename=f"{gwt_model_name}.adv")
+        # Xie et al. (2015), Section 3.4, specifies upstream weighting for
+        # the advective terms in the benchmark.
+        flopy.mf6.ModflowGwtadv(gwt_model, scheme="UPSTREAM", filename=f"{gwt_model_name}.adv")
         
         flopy.mf6.ModflowGwtdsp(
             gwt_model, 

@@ -1,0 +1,62 @@
+# A deliberately compact chemistry that isolates the thermal coupling.
+# Tracer is conservative. ThermalMineral dissolves to Product with an
+# Arrhenius rate that reads PHREEQC's cell temperature through TK.
+
+SOLUTION 0
+    units      mol/L
+    temp       20.0
+    pH         7.0
+    Tracer     0.0
+    Product    0.0
+END
+
+SOLUTION 1
+    units      mol/L
+    temp       60.0
+    pH         7.0
+    Tracer     1.0
+    Product    0.0
+END
+
+KINETICS 1
+ThermalMineral
+    -m0       0.50
+    -formula  Product 1.0
+    # k_ref [mol/s], activation energy [J/mol], reference T [K]
+    -parms    1.5e-8 45000.0 293.15
+    -tol      1.0e-12
+END
+
+RATES
+ThermalMineral
+    -start
+    10 k_ref = PARM(1)
+    20 activation_energy = PARM(2)
+    30 reference_tk = PARM(3)
+    40 gas_constant = 8.314462618
+    50 arrhenius = EXP(-activation_energy / gas_constant * (1 / TK - 1 / reference_tk))
+    60 IF M > 0 THEN area_factor = (M / M0)^(2 / 3) ELSE area_factor = 0
+    70 moles = k_ref * arrhenius * area_factor * TIME
+    80 IF moles > M THEN moles = M
+    90 SAVE moles
+    -end
+END
+
+SELECTED_OUTPUT 1
+    -reset false
+    -high_precision true
+
+USER_PUNCH 1
+    -headings Tracer Product ThermalMineral d_ThermalMineral ArrheniusFactor
+    -start
+    10 PUNCH TOT("Tracer") * TOT("water") / SOLN_VOL
+    20 PUNCH TOT("Product") * TOT("water") / SOLN_VOL
+    30 PUNCH KIN("ThermalMineral")
+    40 PUNCH KIN_DELTA("ThermalMineral")
+    50 PUNCH EXP(-45000 / 8.314462618 * (1 / TK - 1 / 293.15))
+    -end
+END
+
+PRINT
+    -warnings 0
+END

@@ -1,15 +1,34 @@
+# Python caches and local environments
 **/__pycache__/
-**/*.pyc
+**/*.py[cod]
+.venv/
+venv/
 
-/.trae/
-/.vscode/
+# Test, lint, and coverage caches
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
-/cases/
+# Build and packaging output
+build/
+dist/
+*.egg-info/
 
+# Notebook execution state
+**/.ipynb_checkpoints/
+
+# Native MODFLOW binaries are installed locally
 /bin/
-/trash/
+
+# Generated model workspaces and outputs
 /examples/*/simulation/
 /examples/*/output/
-
 /cases/*/simulation/
 /cases/*/output/
+
+# Local case and reference collections
+/cases/
+/references/

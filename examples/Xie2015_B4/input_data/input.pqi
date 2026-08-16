@@ -25,6 +25,8 @@ SOLUTION 1
     Fe(+3)      2.23e-2
 END
 EQUILIBRIUM_PHASES 1
+    # Deliberate B4 variant: all six minerals are equilibrium phases,
+    # even though Xie et al. (2015) specify kinetic reactions.
     Calcite       0.0  5.9572
     Gypsum        0.0  0.0
     Ferrihydrite  0.0  0.0
@@ -32,90 +34,9 @@ EQUILIBRIUM_PHASES 1
     Gibbsite      0.0  1.5065
     Siderite      0.0  1.7088
 END
-KINETICS 1
-Calcite
-	-m0     5.9572
-	-parms  0.00432
-Gypsum
-	-m0     0.0
-	-parms  0.00432
-Ferrihydrite
-    -m0     0.0
-    -parms  0.000432
-Jarosite
-    -m0     0.0
-    -parms  0.000432
-Gibbsite
-    -m0     1.5065
-    -parms  0.0000432
-Siderite
-    -m0     1.7088
-    -parms  0.000432
--steps 1 day
--cvode true
--cvode_steps 500
--bad_step_max 2000
--tol 1e-9
-END
-RATES 1
-Calcite
-	-start
-	10 k0 = PARM(1)
-	30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
-	80 moles = k_t * (1 - SR("Calcite")) * TIME
-	110 SAVE moles
-	-end
-Gypsum
-	-start
-	10 k0 = PARM(1)
-	30 k_t = k0
-	80 moles = k_t * (1 - SR("Gypsum")) * TIME
-	110 SAVE moles
-	-end
-Ferrihydrite
-    -start
-    10 k0 = PARM(1)
-    30 k_t = k0
-    80 moles = k_t * (1 - SR("Ferrihydrite")) * TIME
-    110 SAVE moles
-    -end
-Jarosite
-    -start
-    10 k0 = PARM(1)
-    30 k_t = k0
-    80 moles = k_t * (1 - SR("Jarosite")) * TIME
-    110 SAVE moles
-    -end
-Gibbsite
-    -start
-    10 k0 = PARM(1)
-    30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
-    80 moles = k_t * (1 - SR("Gibbsite")) * TIME
-    110 SAVE moles
-    -end
-Siderite
-    -start
-    10 k0 = PARM(1)
-    30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
-    80 moles = k_t * (1 - SR("Siderite")) * TIME
-    110 SAVE moles
-    -end
-END
 USER_PUNCH 1
     -headings Calcite d_Calcite Gypsum d_Gypsum Ferrihydrite d_Ferrihydrite Jarosite d_Jarosite Gibbsite d_Gibbsite Siderite d_Siderite
     -start
-    # 10 PUNCH KIN("Calcite")
-    # 20 PUNCH KIN_DELTA("Calcite")
-    # 30 PUNCH KIN("Gypsum")
-    # 40 PUNCH KIN_DELTA("Gypsum")
-    # 50 PUNCH KIN("Ferrihydrite")
-    # 60 PUNCH KIN_DELTA("Ferrihydrite")
-    # 70 PUNCH KIN("Jarosite")
-    # 80 PUNCH KIN_DELTA("Jarosite")
-    # 90 PUNCH KIN("Gibbsite")
-    # 100 PUNCH KIN_DELTA("Gibbsite")
-    # 110 PUNCH KIN("Siderite")
-    # 120 PUNCH KIN_DELTA("Siderite")
     10 PUNCH EQUI("Calcite")
     20 PUNCH EQUI_DELTA("Calcite")
     30 PUNCH EQUI("Gypsum")

@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import flopy
 
 def transport_model(
@@ -57,12 +56,12 @@ def transport_model(
         sim,
         pname='ims',
         complexity='SIMPLE',
-        outer_dvclose=1.0e-8,
-        outer_maximum=50,
+        outer_dvclose=1.0e-6,
+        outer_maximum=500,
         under_relaxation='NONE',
-        inner_maximum=100,
+        inner_maximum=300,
         inner_dvclose=1.0e-9,
-        rcloserecord=1.0e-10,
+        rcloserecord=1.0e-6,
         linear_acceleration='CG',
         scaling_method='NONE',
         reordering_method='NONE',
@@ -83,8 +82,9 @@ def transport_model(
         idomain=1,
     )
     
-    strt = np.ones((nlay, nrow, ncol), dtype=np.float32) * 100.0
-    strt[0, :, -1] = 99.0
+    strt = np.broadcast_to(
+        np.linspace(100.0, 99.0, ncol), (nlay, nrow, ncol)
+    ).copy()
     flopy.mf6.ModflowGwfic(gwf, pname='ic', strt=strt)
     
     flopy.mf6.ModflowGwfnpf(
@@ -95,7 +95,8 @@ def transport_model(
         k=hk
     )
     
-    flopy.mf6.ModflowGwfsto(gwf, pname='sto', save_flows=True, iconvert=1, ss=0.0, sy=0.0)
+    # The official MODFLOW-2000 flow problem is steady state, so no STO
+    # package is required.
     
     chd_spd_1 = []
     for i in range(nrow):
@@ -141,9 +142,7 @@ def transport_model(
         printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
     )
 
-# ! ######################### 各种离子溶质运移模型 ######################### ! #
-
-    # ! 将输入的 phreeqcrm 的一维数组转换成字典格式
+    # Create one transport model for every PhreeqcRM component.
     species_conc = {}
     for i in range(len(species_list)):
         start = i * nlay * nrow * ncol
@@ -161,8 +160,6 @@ def transport_model(
     src_maxbound = len(src_data_list)
     # ! src --------------------------------------------------
 
-    m=0
-    gwt_models = {}
     for species_name, species_initial_conc in species_conc.items():
         nouter, ninner = 50, 100
         hclose, rclose, relax = 1e-6, 1e-6, 0.97
@@ -265,45 +262,5 @@ def transport_model(
             exgmnameb=gwtname, 
             filename=f"{gwtname}.gwfgwt"
         )
-        
-        gwt_models[species_name] = gwt
-    
+
     sim.write_simulation()
-    
-    # success = sim.run_simulation()
-    # if not success:
-    #     raise Exception('MODFLOW 6 did not terminate normally.')
-    
-    # # 获取结果数据
-    # head = gwf.oc.output.head().get_alldata()
-    # # print(head.shape)
-    # # plt.plot(head[0, 0, 0, :])
-    # # plt.show()
-    # concentration_data = []
-    # species_names = []
-    
-    # for species, gwt in gwt_models.items():
-    #     concentration_data.append(gwt.oc.output.concentration().get_alldata())
-    #     species_names.append(species)
-
-    # return head
-
-    # # # 如果输入是一维数组，则将结果转换回一维数组格式返回
-    # # if initial_conc is not None and not isinstance(initial_conc, dict):
-    # #     # 获取最终的浓度数据
-    # #     result_array = np.zeros(len(species_list) * ncol)
-        
-    # #     # 将每个溶质的浓度数据填充到结果数组中
-    # #     for i, species in enumerate(species_list):
-    # #         # 获取该溶质的浓度数据
-    # #         species_idx = species_names.index(species)
-    # #         species_conc_data = concentration_data[species_idx][0][0][0]
-            
-    # #         # 填充到结果数组中
-    # #         result_array[i * ncol:(i + 1) * ncol] = species_conc_data
-        
-    # #     return result_array
-    # # else:
-    # #     # 如果输入是字典或None，返回原始格式的结果
-    # #     # return concentration_data
-    # #     return head

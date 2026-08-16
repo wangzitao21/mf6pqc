@@ -1589,8 +1589,8 @@ FeS(ppt)
 Benz
 #################################################
   -start
-   30  mBenz = M
-   60  rate = parm(1)* mBenz 
+   30  mBenz = TOT("Benz")
+   60  rate = parm(1)* mBenz * TOT("water")
    70  moles = rate * time
    80  if (moles > m) then moles = m
    200 save moles
@@ -1600,9 +1600,9 @@ Benz
 Tolu
 #################################################
   -start
-   20  mTolu = M
+   20  mTolu = TOT("Tolu")
    30  if (mTolu <= 1e-10) then goto 200
-   40  rate = parm(1)* mTolu  
+   40  rate = parm(1)* mTolu * TOT("water")
    50  moles = rate * time
    80  if (moles > m) then moles = m
    200 save moles
@@ -1612,9 +1612,9 @@ Tolu
 Ethy
 #################################################
   -start
-   30  mXyl = M
+   30  mEthy = TOT("Ethy")
    40  if (mEthy <= 1e-12) then goto 200
-   50  rate = parm(1)* mEthy
+   50  rate = parm(1)* mEthy * TOT("water")
    70  moles = rate * time
    80  if (moles > m) then moles = m
    200 save moles
@@ -1624,9 +1624,9 @@ Ethy
 Xyl
 #################################################
   -start
-   30  mXyl = M
+   30  mXyl = TOT("Xyl")
    40  if (mXyl <= 1e-12) then goto 200
-   50  rate = parm(1)* mXyl
+   50  rate = parm(1)* mXyl * TOT("water")
    70  moles = rate * time
    80 if (moles > m) then moles = m
    200 save moles
@@ -1636,52 +1636,20 @@ Xyl
 Benznapl
 #################################################
   -start
-   # 10 获取当前Benznapl的摩尔数 (使用内置变量 M)
-   10 current_m_Benznapl = M
-   # 15 检查Benznapl是否耗尽
-   15 if current_m_Benznapl <= 1e-10 then goto 200
-
-   # 20 定义纯Benzene的溶解度 (单位需要明确，假设是 mol/kgw)
+   10 mBenznapl = M
+   15 if mBenznapl <= 1e-10 then goto 200
    20 solub_Benz = 0.022820
-
-   # 25 获取当前溶液中溶解态Benz的摩尔浓度
-   25 current_aq_Benz = TOT("Benz")
-
-   # 32-38 获取其他共存NAPL组分的当前摩尔数 (使用 KIN 函数)
-   32 current_m_Tolunapl = KIN("Tolunapl")
-   34 current_m_Ethynapl = KIN("Ethynapl")
-   36 current_m_Xylnapl  = KIN("Xylnapl")
-   # 38 假设Lowsolubnapl也是一个定义的动力学反应物
-   # 如果不是，需要相应调整或移除
-   38 current_m_Lowsolubnapl = KIN("Lowsolubnapl")
-
-   # 40 计算NAPL混合物的总摩尔数
-   40 m_napl_tot = current_m_Benznapl + current_m_Tolunapl + current_m_Ethynapl + current_m_Xylnapl + current_m_Lowsolubnapl
-
-   # 42 检查总NAPL量是否耗尽 (可能冗余，但保留也无妨)
+   25 mBenz = TOT("Benz")
+   32 mTolunapl = KIN("Tolunapl")
+   34 mEthynapl = KIN("Ethynapl")
+   36 mXylnapl  = KIN("Xylnapl")
+   40 m_napl_tot = mBenznapl + mTolunapl + mEthynapl + mXylnapl
    42 if (m_napl_tot <= 1e-10) then goto 200
-
-   # 50 根据拉乌尔定律计算Benzene在混合物中的有效溶解度
-   # (摩尔分数 * 纯组分溶解度)
-   50 mole_fraction_Benz = current_m_Benznapl / m_napl_tot
+   50 mole_fraction_Benz = mBenznapl / m_napl_tot
    55 effective_solub_Benz = mole_fraction_Benz * solub_Benz
-
-   # 60 计算溶解速率 (基于溶解度与水中浓度的差值)
-   # parm(1) 是速率常数
-   60 rate = parm(1) * (effective_solub_Benz - current_aq_Benz)
-
-   # 65 如果计算出的溶解度低于水中浓度，说明应该沉淀而非溶解，速率为0或负
-   #    (通常溶解动力学不处理沉淀，速率设为0)
-   #    或者只允许正速率（溶解）
-   65 if rate < 0 then rate = 0
-
-   # 70 计算此时间步长内溶解的反应进程摩尔数
+   60 rate = parm(1) * (effective_solub_Benz - mBenz) * TOT("water")
    70 moles = rate * time
-
-   # 80 确保溶解量不超过当前剩余的NAPL量
-   80 if (moles > current_m_Benznapl) then moles = current_m_Benznapl
-
-   # 200 保存计算出的反应进程摩尔数
+   80 if (moles > m) then moles = m
    200 save moles
   -end
 
@@ -1696,11 +1664,10 @@ Tolunapl
    30  mBenznapl = KIN("Benznapl")
    34  mEthynapl = KIN("Ethynapl")
    36  mXylnapl  = KIN("Xylnapl")  
-   38  mLowsolubnapl  = KIN("Lowsolubnapl")
-   40  m_napl_tot = mBenznapl + mTolunapl + mEthynapl + mXylnapl + mLowsolubnapl
+   40  m_napl_tot = mBenznapl + mTolunapl + mEthynapl + mXylnapl
    42  if (m_napl_tot <= 1e-10) then goto 200
    50  msolub_Tolu =  (mTolunapl / m_napl_tot) * solub_Tolu
-   60  rate = parm(1)  * (msolub_Tolu - mTolu)
+   60  rate = parm(1)  * (msolub_Tolu - mTolu) * TOT("water")
    70  moles = rate * time
    80  if (moles > m) then moles = m
    200 save moles
@@ -1717,11 +1684,10 @@ Ethynapl
    30  mBenznapl = KIN("Benznapl")
    32  mTolunapl = KIN("Tolunapl")
    36  mXylnapl  = KIN("Xylnapl")
-   38  mLowsolubnapl  = KIN("Lowsolubnapl")
-   40  m_napl_tot = mBenznapl + mTolunapl + mEthynapl + mXylnapl + mLowsolubnapl
+   40  m_napl_tot = mBenznapl + mTolunapl + mEthynapl + mXylnapl
    42  if (m_napl_tot <= 1e-10) then goto 200
    50  msolub_Ethy = (mEthynapl / m_napl_tot) * solub_Ethy
-   60  rate = parm(1)  * (msolub_Ethy - mEthy)
+   60  rate = parm(1)  * (msolub_Ethy - mEthy) * TOT("water")
    70  moles = rate * time
    80  if (moles > m) then moles = m
    200 save moles
@@ -1738,11 +1704,10 @@ Xylnapl
    30  mBenznapl = KIN("Benznapl")
    32  mTolunapl = KIN("Tolunapl")
    34  mEthynapl = KIN("Ethynapl")
-   38  mLowsolubnapl  = KIN("Lowsolubnapl")
-   40  m_napl_tot = mBenznapl + mTolunapl + mEthynapl + mXylnapl + mLowsolubnapl
+   40  m_napl_tot = mBenznapl + mTolunapl + mEthynapl + mXylnapl
    42  if (m_napl_tot <= 0) then goto 200
    50  msolub_Xyl =  (mXylnapl / m_napl_tot) * solub_Xyl
-   60  rate = parm(1)  * (msolub_Xyl - mXyl)
+   60  rate = parm(1)  * (msolub_Xyl - mXyl) * TOT("water")
    70  moles = rate * time
    80  if (moles > m) then moles = m
    200 save moles

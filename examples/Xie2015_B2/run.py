@@ -1,7 +1,7 @@
 import os
 import sys
+from pathlib import Path
 import numpy as np
-import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -18,8 +18,10 @@ ic_mapping = {
 }
 
 sim_params = {
-    "case_name": "Example1",
-    "nxyz": 80,
+    "case_name": "Xie2015_B2",
+    # Match the B1-corrected MIN3P layout: two boundary half cells plus
+    # 79 interior cells across the 2-m column.
+    "nxyz": 81,
     "nthreads": 12,
     "temperature": 25.0,
     "pressure": 2.0,
@@ -32,15 +34,23 @@ sim_params = {
 
     "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
     "pqi_path": os.path.join(example_dir, "input_data/phreeqc.pqi"),
-    "modflow_dll_path": "./bin/libmf6.dll",
+    "modflow_dll_path": "./bin/mf6.7.0/libmf6.dll",
     "workspace": os.path.join(example_dir, "simulation"),
     "output_dir": os.path.join(example_dir, "output"),
 
     "if_update_porosity_K": True,
-    "if_update_density": False
+    "if_update_density": False,
+    # With 0.0008-year steps, save annual states so that the 10- and
+    # 100-year benchmark profiles are stored exactly.
+    "save_interval": 1250,
+    "save_interval_offset": 1,
+    "boundary_conductance_updates": {
+        "BUSHUI": {"cell_index": 0, "distance": 0.00625},
+        "GHB_RIGHT": {"cell_index": -1, "distance": 0.00625},
+    },
 }
 
-K_arr = np.ones((1, 1, 80)) * 10.0
+K_arr = np.ones((1, 1, 81)) * 10.0
 
 simulator = mf6pqc(**sim_params)
 initial_concentrations = simulator.setup(ic_map=ic_mapping)
@@ -50,7 +60,7 @@ components = simulator.get_components()
 
 transport_model(
     nrow=1,
-    ncol=80,
+    ncol=81,
     nlay=1,
     sim_ws=os.path.join(example_dir, 'simulation'),
     species_list=components,
@@ -63,6 +73,22 @@ transport_model(
 
 simulator.run()
 simulator.save_results()
+
+# A standalone run of simulation/mf6.exe writes heads but does not execute
+# MF6PQC chemistry or produce these arrays. Verify that this Python driver
+# completed the reactive run before reporting success.
+output_dir = Path(sim_params["output_dir"])
+required_outputs = [
+    output_dir / "results.npy",
+    output_dir / "results_porosity.npy",
+    output_dir / "results_K.npy",
+]
+missing_outputs = [str(path) for path in required_outputs if not path.is_file()]
+if missing_outputs:
+    raise RuntimeError("MF6PQC reactive outputs were not saved: " + ", ".join(missing_outputs))
+print("MF6PQC reactive outputs saved successfully:")
+for path in required_outputs:
+    print(f"  {path}  shape={np.load(path, mmap_mode='r').shape}")
 
 simulator.finalize()
 

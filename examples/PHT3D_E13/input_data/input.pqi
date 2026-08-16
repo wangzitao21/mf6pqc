@@ -1,0 +1,174 @@
+SOLUTION 0 Column water
+    units mol/kgw
+    temp 7
+    pH 9.104
+    pe -4.812
+    C(4) 5.86e-4
+    C(-4) 0
+    Ca 3.86e-4
+    Cl 2.007e-2
+    Fe(2) 1.0e-6
+    Fe(3) 0
+    Mg 1.0e-2
+    O(0) 0
+    S(-2) 0
+    S(6) 1.0e-5
+    Orgc_sed 0
+END
+
+SOLUTION 1 Oxidizing pulse
+    units mol/kgw
+    temp 7
+    pH 7
+    pe 15.8715
+    C(4) 1.0e-6
+    C(-4) 0
+    Ca 1.0e-6
+    Cl 5.301e-3
+    Fe(2) 1.0e-8
+    Fe(3) 0
+    Mg 2.65e-3
+    O(0) 3.491e-1
+    S(-2) 0
+    S(6) 1.0e-8
+    Orgc_sed 0
+END
+
+SOLUTION 2 Anoxic chase
+    units mol/kgw
+    temp 7
+    pH 7
+    pe 14.5
+    C(4) 1.0e-7
+    C(-4) 0
+    Ca 1.0e-7
+    Cl 1.02e-2
+    Fe(2) 1.0e-8
+    Fe(3) 0
+    Mg 5.1e-3
+    O(0) 1.145e-6
+    S(-2) 0
+    S(6) 2.0e-7
+    Orgc_sed 0
+END
+
+EQUILIBRIUM_PHASES 1
+    # PHT3D BTN stores immobile components per representative bulk volume.
+    Goethite 3.0 0.010152
+END
+COPY equilibrium_phases 1 2-4
+END
+
+EXCHANGE 1
+    # Exact A13 immobile-component inventories from pht3dbtn.dat.
+    X 0.032712
+    Ya 0.001316
+    Yb 0.001316
+    Yc 0.001316
+    Yd 0.001316
+    Ye 0.001316
+    Yf 0.001316
+    -equilibrate 0
+END
+EXCHANGE 2
+    X 0.029704
+    Ya 0.0014664
+    Yb 0.0014664
+    Yc 0.0014664
+    Yd 0.0014664
+    Ye 0.0014664
+    Yf 0.0014664
+    -equilibrate 0
+END
+EXCHANGE 3
+    X 0.040608
+    Ya 0.0030456
+    Yb 0.0030456
+    Yc 0.0030456
+    Yd 0.0030456
+    Ye 0.0030456
+    Yf 0.0030456
+    -equilibrate 0
+END
+EXCHANGE 4
+    X 0.045496
+    Ya 0.0036848
+    Yb 0.0036848
+    Yc 0.0036848
+    Yd 0.0036848
+    Ye 0.0036848
+    Yf 0.0036848
+    -equilibrate 0
+END
+
+SURFACE 1
+    # PHT3D links 0.2 mol of sites to each mol of equilibrium goethite.
+    # With 0.027 mol goethite/L water and porosity 0.376, this is
+    # 0.027 * 0.2 * 0.376 = 0.0020304 mol sites/L bulk.
+    Hfo_wOH 0.0020304 600 0.2
+    -equilibrate 0
+END
+COPY surface 1 2-4
+END
+
+KINETICS 1
+    Orgc_sed
+        # Native PHREEQC KINETICS decrements M; only the dissolved product
+        # belongs in the formula. PhreeqcRM performs the bulk/water conversion.
+        -formula C 1
+        -m0 0.89
+        -m 0.89
+        # PHT3D evaluates this rate for one litre of water. Scale the
+        # molar rate to the 0.376 L of water in one litre of bulk medium.
+        -parms 3.572e-10
+    Calcite
+        -m0 1.504
+        -m 1.504
+        # PHT3D's A/V is for one litre of water; the PhreeqcRM reaction
+        # cell contains 0.376 L water per litre of representative volume.
+        -parms 37.6 0.6
+    Pyrite
+        -m0 0.01504
+        -m 0.01504
+        # PHT3D evaluates the A/V term per litre of water; PhreeqcRM
+        # KINETICS uses representative bulk volume for units option 0.
+        -parms 2.9952 0 0.5 0
+END
+COPY kinetics 1 2-4
+END
+
+USER_PUNCH 1
+    -headings C_4 C_m4 Ca Cl Fe_2 Fe_3 Mg O_0 S_m2 S_6 pH pe Orgc_sed Goethite X_ex Ya_ex Yb_ex Yc_ex Yd_ex Ye_ex Yf_ex Hfo_w Calcite Pyrite HCO3
+    -start
+    10 PUNCH TOT("C(4)")
+    20 PUNCH TOT("C(-4)")
+    30 PUNCH TOT("Ca")
+    40 PUNCH TOT("Cl")
+    50 PUNCH TOT("Fe(2)")
+    60 PUNCH TOT("Fe(3)")
+    70 PUNCH TOT("Mg")
+    80 PUNCH TOT("O(0)")
+    90 PUNCH TOT("S(-2)")
+    100 PUNCH TOT("S(6)")
+    110 PUNCH -LA("H+")
+    120 PUNCH -LA("e-")
+    130 PUNCH KIN("Orgc_sed")
+    140 PUNCH EQUI("Goethite")
+    150 PUNCH TOT("X") * 0.376
+    160 PUNCH TOT("Ya") * 0.376
+    170 PUNCH TOT("Yb") * 0.376
+    180 PUNCH TOT("Yc") * 0.376
+    190 PUNCH TOT("Yd") * 0.376
+    200 PUNCH TOT("Ye") * 0.376
+    210 PUNCH TOT("Yf") * 0.376
+    220 PUNCH TOT("Hfo_w") * 0.376
+    230 PUNCH KIN("Calcite")
+    240 PUNCH KIN("Pyrite")
+    250 PUNCH ALK
+    -end
+END
+
+SELECTED_OUTPUT 1
+    -reset false
+    -high_precision true
+END

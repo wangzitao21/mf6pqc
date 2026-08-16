@@ -1,24 +1,18 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import flopy
 
-def transport_model(
-    sim_ws='./simulation/PHT3D_CASE_7',
-    perlen=40, 
-    nstp=120, 
-    bc=None,
-    species_list=None, 
-    initial_conc=None
-):
 
-    sim_name = 'model'
-    
-    nrow = 1
-    ncol = 41
-    nlay = 1
-        
-    gwfname = f"gwf_{sim_name}"
-    
+def transport_model(
+    sim_ws="./simulation/PHT3D_CASE_7",
+    perlen=40,
+    nstp=120,
+    bc=None,
+    species_list=None,
+    initial_conc=None,
+):
+    """Write the MODFLOW 6 model matching official PHT3D Example 7."""
+
+    sim_name = "model"
     nrow = 1
     ncol = 41
     nlay = 1
@@ -27,7 +21,7 @@ def transport_model(
     top = 1.0
     botm = 0.0
     hk = 100.00
-    
+    gwfname = f"gwf_{sim_name}"
     nper = 1
     perlen = np.array([perlen])
     nstp = [nstp]
@@ -196,7 +190,7 @@ def transport_model(
             filename=f"{gwtname}.ic"
         )
         
-        flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwtname}.adv")
+        flopy.mf6.ModflowGwtadv(gwt, scheme="UPSTREAM", filename=f"{gwtname}.adv")
         flopy.mf6.ModflowGwtdsp(
             gwt, 
             xt3d_off=True, 

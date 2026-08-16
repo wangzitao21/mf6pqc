@@ -16,8 +16,10 @@ ic_mapping = {
 }
 
 sim_params = {
-    "case_name": "Example1",
-    "nxyz": 80,
+    "case_name": "Xie2015_B1",
+    # Two 0.0125-m boundary half cells and 79 interior 0.025-m cells match
+    # the MIN3P B1 reference geometry exactly.
+    "nxyz": 81,
     "nthreads": 6,
     "temperature": 25.0,
     "pressure": 2.0,
@@ -35,10 +37,20 @@ sim_params = {
     "output_dir": os.path.join(example_dir, "output"),
 
     "if_update_porosity_K": True,
-    "if_update_density": False
+    "if_update_density": False,
+    # With offset=1, each saved frame is an exact endpoint: annually through
+    # 120 years and every 10 years thereafter, including 10, 100, 120 and 500.
+    "save_interval": 1000,
+    "save_interval_offset": 1,
+    # Fixed-head faces lie 0.00625 m from the centers of the two boundary
+    # half cells.  Their GHB conductance follows the adjacent K each step.
+    "boundary_conductance_updates": {
+        "BUSHUI": {"cell_index": 0, "distance": 0.00625},
+        "GHB_RIGHT": {"cell_index": -1, "distance": 0.00625},
+    },
 }
 
-K_arr = np.ones((1, 1, 80)) * 10.0
+K_arr = np.ones((1, 1, 81)) * 10.0
 
 simulator = mf6pqc(**sim_params)
 initial_concentrations = simulator.setup(ic_map=ic_mapping)
@@ -48,7 +60,7 @@ components = simulator.get_components()
 
 transport_model(
     nrow=1,
-    ncol=80,
+    ncol=81,
     nlay=1,
     sim_ws=os.path.join(example_dir, 'simulation'),
     species_list=components,
@@ -59,8 +71,7 @@ transport_model(
     initial_head=0.0
 )
 
-# simulator.run()
-simulator.run_SIA()
+simulator.run()
 simulator.save_results()
 
 simulator.finalize()

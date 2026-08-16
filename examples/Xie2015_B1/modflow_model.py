@@ -9,8 +9,9 @@ def transport_model(
 
     sim_ws="",
     species_list=["Ca", "Mg", "Cl"],
-    perlen=365*10,
-    nstp=10000,
+    # # Xie et al. (2015), benchmark B1: 500-year simulation.
+    # perlen=365.0 * 500,
+    # nstp=158000,
     initial_conc=np.ones(120000) * 0.05,
     bc=[0.1, 0.1, 0.1],
     porosity=0.35,
@@ -20,15 +21,31 @@ def transport_model(
 
     gwf_model_name = 'gwf_model'
 
-    delr = [0.025] * ncol
+    if ncol != 81:
+        raise ValueError("B1 requires 81 cells: two boundary half cells and 79 interior cells")
+    delr = [0.0125] + [0.025] * 79 + [0.0125]
     delc = [1.0]
     top = 1.0
     botm = 0
 
-    nper = 3
-    tsmult = 1.0
+    # Keep the 0.001-year step through the last profile reported in Fig. 2.
+    # The previous 0.01-year step after year 10 smeared the dissolution front
+    # and caused the 100- and 120-year profiles to diverge from MIN3P.
+    # A reduced 0.01-year step is retained after year 120 for the 500-year
+    # outflow history.  All reported B1 output times remain exact endpoints.
+    # tsmult = 1.0
+
+    perioddata = [
+        (365.0 * 10,  10000,  1.0),  # 0--10 years: 0.001 years per step
+        (365.0 * 110, 110000, 1.0),  # 10--120 years: 0.001 years per step
+        (365.0 * 380, 38000,  1.0),  # 120--500 years: 0.01 years per step
+    ]
+    nper = len(perioddata)
 
     hk = K11
+    # Fixed heads are applied at the outer faces of the 0.0125-m boundary
+    # half cells.  C = K * A / (delr / 2); mf6pqc updates C with the local K.
+    boundary_conductance = 10.0 / 0.00625
     
     sim = flopy.mf6.MFSimulation(
         sim_name="model",
@@ -42,12 +59,12 @@ def transport_model(
         pname='tdis',
         time_units='DAYS',
         nper=nper,
-        # perioddata=[(perlen, nstp, tsmult)]
-        perioddata=[(365.0*0.1, 100, 1.0),
-                    (365.0*0.9, 500, 1.0),
-                    (365.0*9.0, 1000, 1.0),
+        perioddata=perioddata
+        # perioddata=[(365.0*0.1, 100, 1.0),
+        #             (365.0*0.9, 500, 1.0),
+        #             (365.0*9.0, 1000, 1.0),
                     # (perlen, nstp, 1.0),
-                    ]
+                    # ]
     )
 
     # ! ATS =======================================
@@ -86,12 +103,17 @@ def transport_model(
         outer_dvclose=1.0e-8,
         outer_maximum=50,
         under_relaxation='NONE',
-        inner_maximum=100,
+        # The coupled API path resolves this 1-D, strongly evolving K field
+        # repeatedly.  CG with 100 iterations starts reporting false
+        # non-convergence once the dissolved inlet cells become much more
+        # conductive than the rest of the column.  BICGSTAB with diagonal
+        # scaling is robust for the resulting coefficient contrast.
+        inner_maximum=500,
         inner_dvclose=1.0e-9,
-        rcloserecord=1.0e-10,
-        linear_acceleration='CG',
-        scaling_method='NONE',
-        reordering_method='NONE',
+        rcloserecord=1.0e-8,
+        linear_acceleration='BICGSTAB',
+        scaling_method='DIAGONAL',
+        reordering_method='RCM',
         relaxation_factor=0.97
     )
     sim.register_ims_package(ims, [gwf_model.name])
@@ -155,7 +177,7 @@ def transport_model(
     #     filename=f"{gwf_model_name}.bushui.chd"
     # )
 
-    ghb_spd = [[(0, 0, ncol-1), 0.0, 800.0]] 
+    ghb_spd = [[(0, 0, ncol-1), 0.0, boundary_conductance]]
     flopy.mf6.ModflowGwfghb(
         gwf_model,
         pname='ghb_right',
@@ -165,8 +187,8 @@ def transport_model(
         filename=f"{gwf_model_name}.choushui.ghb"
     )
 
-    ghb2_spd = [[(0, 0, 0), 0.007, 800.0, *bc]] 
-    
+    # The left GHB provides an approximately fixed head and AUX concentrations.
+    ghb2_spd = [[(0, 0, 0), 0.007, boundary_conductance, *bc]]
     flopy.mf6.ModflowGwfghb(
         gwf_model,
         pname='bushui',
@@ -182,8 +204,12 @@ def transport_model(
         pname='oc',
         budget_filerecord=f'{gwf_model_name}.bud',
         head_filerecord=f'{gwf_model_name}.hds',
-        saverecord=[('HEAD', 'ALL'), ('BUDGET', 'ALL')],
-        printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
+        # Heads are saved every step. The B1 outflow is recovered from the
+        # right GHB conductance and adjacent simulated head, so a large
+        # cell-by-cell budget file is unnecessary.
+        # Do not print head/budget tables every time step: that output alone
+        # previously created >1 GB of listing files for B1.
+        saverecord=[('HEAD', 'ALL'), ('BUDGET', 'LAST')]
     )
 
 # ! ######################### 各种离子溶质运移模型 ######################### ! #
@@ -240,7 +266,7 @@ def transport_model(
         sim.register_ims_package(imsgwt, [gwt_model.name])
         
         flopy.mf6.ModflowGwtdis(
-            gwt_model, 
+            gwt_model,
             nlay=gwf_model.dis.nlay.get_data(), 
             nrow=gwf_model.dis.nrow.get_data(), 
             ncol=gwf_model.dis.ncol.get_data(), 
@@ -254,6 +280,8 @@ def transport_model(
 
         flopy.mf6.ModflowGwtic(gwt_model, strt=species_initial_conc, filename=f"{gwt_model_name}.ic")
 
+        # TVD is the stable MODFLOW 6 discretization for this tightly coupled
+        # implementation; the benchmark itself has no physical dispersion.
         flopy.mf6.ModflowGwtadv(gwt_model, scheme="TVD", filename=f"{gwt_model_name}.adv")
         
         flopy.mf6.ModflowGwtdsp(
@@ -275,7 +303,8 @@ def transport_model(
         # 实例化 SRC 包
         # ---------------------------------------------------------------------
         flopy.mf6.ModflowGwtsrc(
-            gwt_model, 
+            gwt_model,
+            pname='SRC',
             # pname='SRC',          # 给包起个名字，方便查找
             save_flows=True,      # 建议开启，方便检查注入量
             maxbound=src_maxbound,# 关键：预分配全场内存
@@ -296,7 +325,8 @@ def transport_model(
             gwt_model, 
             budget_filerecord=f"{gwt_model_name}.cbc", 
             concentration_filerecord=f"{gwt_model_name}.ucn",
-            budgetcsv_filerecord="{}.oc.csv".format(gwt_model_name),
+            # Per-step budget CSV files are not used by this benchmark and
+            # produce six large files for the 158,000-step simulation.
             saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")]
         )
         

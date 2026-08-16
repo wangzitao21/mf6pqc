@@ -1,7 +1,5 @@
 import os
 import sys
-import numpy as np
-import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -37,7 +35,9 @@ sim_params = {
     "output_dir": os.path.join(example_dir, "output"),
 
     "if_update_porosity_K": False,
-    "if_update_density": False
+    "if_update_density": False,
+    "progress_interval": 10,
+    "fail_on_nonconvergence": True,
 }
 
 simulator = mf6pqc(**sim_params)

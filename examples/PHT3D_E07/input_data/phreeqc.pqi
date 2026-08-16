@@ -56,14 +56,14 @@ USER_PUNCH 1
 	70 PUNCH TOT("S_ccc") * TOT("water") / SOLN_VOL
 END
 SELECTED_OUTPUT 1
-    -step flase
+    -step false
     -high_precision true
     -water false
-    soln false
-    pH false
-    sim false
-    state false
-    time false
-    pe false
-    distance false
+    -solution false
+    -pH false
+    -simulation false
+    -state false
+    -time false
+    -pe false
+    -distance false
 END
