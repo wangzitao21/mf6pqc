@@ -29,7 +29,7 @@ simulator = mf6pqc(
     solution_density_volume=False,
     db_path=str(CASE_DIR / "input_data" / "phreeqc.dat"),
     pqi_path=str(CASE_DIR / "input_data" / "phreeqc.pqi"),
-    modflow_dll_path=str(REPOSITORY_DIR / "bin" / "mf6.7.0" / "libmf6.dll"),
+    modflow_dll_path=str(REPOSITORY_DIR / "bin" / "mf6.8.0" / "libmf6.dll"),
     workspace=str(CASE_DIR / "simulation"),
     output_dir=str(CASE_DIR / "output"),
     if_update_porosity_K=False,
@@ -47,7 +47,7 @@ transport_model(
     species_list=simulator.get_components(),
     initial_conc=initial_concentrations,
     inflow_concentrations=inflow_concentrations,
-    mf6_exe=REPOSITORY_DIR / "bin" / "mf6.7.0" / "mf6.exe",
+    mf6_exe=REPOSITORY_DIR / "bin" / "mf6.8.0" / "mf6.exe",
 )
 
 simulator.run()

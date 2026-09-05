@@ -29,10 +29,13 @@ from mf6pqc.exceptions import CouplingError
 class TdisApi:
     def __init__(self, perlen, nstp, tsmult) -> None:
         self.values = {
-            "__INPUT__/SIM/TDIS/PERLEN": np.asarray(perlen),
-            "__INPUT__/SIM/TDIS/NSTP": np.asarray(nstp),
-            "__INPUT__/SIM/TDIS/TSMULT": np.asarray(tsmult),
+            "TDIS/PERLEN": np.asarray(perlen),
+            "TDIS/NSTP": np.asarray(nstp),
+            "TDIS/TSMULT": np.asarray(tsmult),
         }
+
+    def get_var_address(self, variable, component):
+        return f"{component}/{variable}"
 
     def get_value(self, address):
         return self.values[address]

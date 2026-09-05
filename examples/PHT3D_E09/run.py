@@ -30,7 +30,7 @@ sim_params = {
     "solution_density_volume": False,
     "db_path": os.path.join(example_dir, "input_data", "phreeqc.dat"),
     "pqi_path": os.path.join(example_dir, "input_data", "input.pqi"),
-    "modflow_dll_path": os.path.join(repo_dir, "bin", "mf6.7.0", "libmf6.dll"),
+    "modflow_dll_path": os.path.join(repo_dir, "bin", "mf6.8.0", "libmf6.dll"),
     "workspace": os.path.join(example_dir, "simulation"),
     "output_dir": os.path.join(example_dir, "output"),
     "if_update_porosity_K": False,
@@ -48,7 +48,7 @@ transport_model(
     initial_conc=initial_concentrations,
     background_concentrations=simulator.get_initial_concentrations(0),
     well_concentrations=simulator.get_initial_concentrations(1),
-    mf6_exe=os.path.join(repo_dir, "bin", "mf6.7.0", "mf6.exe"),
+    mf6_exe=os.path.join(repo_dir, "bin", "mf6.8.0", "mf6.exe"),
 )
 
 simulator.run()

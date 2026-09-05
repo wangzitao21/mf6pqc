@@ -15,12 +15,12 @@ sys.path.insert(0, str(REPOSITORY_DIR))
 from mf6pqc.mf6pqc import mf6pqc
 
 from modflow_model import (
-    NCOL,
     NXYZ,
     POROSITY,
     TRANSPORT_SUBSTEPS,
     coupling_period_data,
     coupling_step_end_times,
+    flow_step_end_times,
     transport_model,
 )
 
@@ -51,17 +51,18 @@ with np.load(INPUT_DIR / "official_reference.npz") as reference:
     PERIOD_DATA = coupling_period_data(reference["output_days"])
 if len(PERIOD_DATA) != 4_388:
     raise ValueError(
-        "Official E12 schedule must contain 4,388 reaction intervals; "
+        "Official E12 schedule must contain 4,388 transport intervals; "
         f"reconstructed {len(PERIOD_DATA)}"
     )
 SAVE_STEPS = save_step_numbers(SAVE_TARGET_DAYS, COUPLING_TIMES)
-REACTION_STEPS = list(
-    range(
-        TRANSPORT_SUBSTEPS,
-        len(PERIOD_DATA) * TRANSPORT_SUBSTEPS + 1,
-        TRANSPORT_SUBSTEPS,
-    )
+FLOW_REACTION_STEPS = save_step_numbers(
+    tuple(flow_step_end_times()), COUPLING_TIMES
 )
+# PHT3D OS=2 reacts after flow steps only.  MF6PQC currently records selected
+# output only on reaction steps, so include the three requested comparison
+# times as explicit compatibility points; do not turn the other 999 TIMPRS
+# transport/output events into reactions.
+REACTION_STEPS = sorted(set(FLOW_REACTION_STEPS) | set(SAVE_STEPS))
 
 params = {
     "case_name": "PHT3D_E12",
@@ -77,9 +78,9 @@ params = {
     # this as the robust formulation; transporting total H/O requires 8--10
     # accurate significant digits and visibly perturbs pH in this dilute case.
     "componentH2O": True,
-    # PHT3D v2.10 transports pH/pe as legacy primary variables rather than
-    # PhreeqcRM's signed charge imbalance.  Flooring Charge is an explicit,
-    # case-local compatibility choice; the MF6PQC default remains signed.
+    # PHT3D CB_OFFSET=0 does not transport charge imbalance.  Charge is given
+    # a local storage-only GWT model below; flooring its tiny negative setup
+    # residual is an explicit case-local compatibility choice.
     "signed_components": (),
     "solution_density_volume": False,
     "db_path": str(INPUT_DIR / "phreeqc.dat"),
@@ -105,6 +106,16 @@ components = simulator.get_components()
 pulse_concentrations = simulator.get_initial_concentrations(1)
 chase_concentrations = simulator.get_initial_concentrations(0)
 
+# PHT3D's CB_OFFSET=0 discards charge imbalance instead of passing it through
+# MT3D.  Start the storage-only Charge model from exactly zero; PHREEQC then
+# preserves zero (apart from roundoff) at subsequent reaction calls.
+charge_index = components.index("Charge")
+initial_concentrations[
+    charge_index * NXYZ : (charge_index + 1) * NXYZ
+] = 0.0
+pulse_concentrations[charge_index] = 0.0
+chase_concentrations[charge_index] = 0.0
+
 transport_model(
     sim_ws=params["workspace"],
     species_list=components,
@@ -124,6 +135,7 @@ finally:
 print(
     f"Saved target hours {SAVE_HOURS} at exact PHT3D coupling steps "
     f"{[step // TRANSPORT_SUBSTEPS for step in SAVE_STEPS]}; "
-    f"{len(REACTION_STEPS)} reactions over "
+    f"{len(FLOW_REACTION_STEPS)} official flow-step reactions "
+    f"plus {len(set(SAVE_STEPS) - set(FLOW_REACTION_STEPS))} save points over "
     f"{len(PERIOD_DATA) * TRANSPORT_SUBSTEPS} MF6 transport steps."
 )

@@ -27,6 +27,18 @@ python examples\PHT3D_E01\run.py
 python examples\PHT3D_E01\validate.py
 ```
 
+The idealized three-layer salt-lake brine-mining case includes
+halite-saturated canal recharge, production wells, Pitzer chemistry, evaporite
+dissolution, and porosity/conductivity feedback:
+
+```powershell
+python examples\SaltLake_Brine3D\run.py --profile smoke --scenario feedback
+python examples\SaltLake_Brine3D\validate.py --profile smoke --scenario feedback
+```
+
+See [examples/SaltLake_Brine3D/README.md](examples/SaltLake_Brine3D/README.md)
+for the scientific assumptions, full-duration profiles, and comparison design.
+
 ## Run tests
 
 ```powershell

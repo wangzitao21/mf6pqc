@@ -12,6 +12,9 @@ NLAY = 58
 NROW = 1
 NCOL = 99
 NXYZ = NLAY * NROW * NCOL
+FLOW_STEPS = 120
+TRANSPORT_SUBSTEPS = 5
+TOTAL_TRANSPORT_STEPS = FLOW_STEPS * TRANSPORT_SUBSTEPS
 
 DELR = np.array(
     [1.0] * 7
@@ -120,6 +123,10 @@ def transport_model(
         pname="ic",
         strt=np.full((NLAY, NROW, NCOL), 33.76, dtype=float),
     )
+    vertical_conductivity = np.full((NLAY, NROW, NCOL), 86.4, dtype=float)
+    # The official BCF6 input uses 1000 m/d in the injection-well column so
+    # the incoming water is distributed vertically over the screened layers.
+    vertical_conductivity[:, 0, 0] = 1000.0
     flopy.mf6.ModflowGwfnpf(
         gwf,
         pname="npf",
@@ -127,7 +134,7 @@ def transport_model(
         save_specific_discharge=True,
         icelltype=1,
         k=86.4,
-        k33=86.4,
+        k33=vertical_conductivity,
         wetdry=-0.01,
     )
     flopy.mf6.ModflowGwfsto(
@@ -195,6 +202,23 @@ def transport_model(
     species_initial = _split_initial_concentrations(species_list, initial_conc)
     for species_name, concentration in species_initial.items():
         gwt_name = get_gwt_model_name(species_name)
+        is_mobile = species_name != "Charge"
+        # Tolu_h and Naph_h are roughly two orders of magnitude less
+        # concentrated than their light partners.  A conventional absolute
+        # residual produced 0.05% and 0.15% mass errors respectively, which
+        # become visible 0.5--1.5 per-mil errors after taking isotope ratios.
+        # Sulf_h is much more abundant and already mass-conservative at the
+        # standard tolerances; forcing it to this low-concentration criterion
+        # instead stalls the nonlinear solve in strongly depleted cells.
+        needs_isotope_precision = species_name in {"Tolu_h", "Naph_h"}
+        # TVD's nonlinear outer iterations cannot reliably reduce the
+        # concentration-change norm below 1e-9 at the initial sharp fronts.
+        # The isotope drift is instead controlled by the linear mass-rate
+        # residual and inner increment, which must be far below the roughly
+        # 1e-6 mol/day heavy-isotope fluxes in this case.
+        transport_outer_dvclose = 1.0e-9 if needs_isotope_precision else 1.0e-7
+        transport_inner_dvclose = 1.0e-12 if needs_isotope_precision else 1.0e-8
+        transport_rclose = 1.0e-12 if needs_isotope_precision else 1.0e-7
         gwt = flopy.mf6.ModflowGwt(
             sim,
             modelname=gwt_name,
@@ -203,13 +227,13 @@ def transport_model(
         )
         transport_ims = flopy.mf6.ModflowIms(
             sim,
-            print_option="SUMMARY",
+            print_option="NONE",
             complexity="MODERATE",
-            outer_dvclose=1.0e-7,
-            outer_maximum=100,
-            inner_maximum=100,
-            inner_dvclose=1.0e-8,
-            rcloserecord=1.0e-7,
+            outer_dvclose=transport_outer_dvclose,
+            outer_maximum=200,
+            inner_maximum=1000,
+            inner_dvclose=transport_inner_dvclose,
+            rcloserecord=transport_rclose,
             linear_acceleration="BICGSTAB",
             relaxation_factor=0.97,
             filename=f"{gwt_name}.ims",
@@ -231,49 +255,61 @@ def transport_model(
             strt=concentration,
             filename=f"{gwt_name}.ic",
         )
-        flopy.mf6.ModflowGwtadv(
-            gwt,
-            scheme="TVD",
-            filename=f"{gwt_name}.adv",
-        )
-        flopy.mf6.ModflowGwtdsp(
-            gwt,
-            alh=0.05,
-            alv=0.05,
-            ath1=0.005,
-            # MT3D TRPV = 0.01 makes transverse spreading normal to
-            # horizontal x-flow 0.05 * 0.01 = 0.0005 m in the z direction.
-            ath2=0.0005,
-            # For vertical flow, the transverse x/y value is AL * TRPT.
-            atv=0.005,
-            diffc=0.0,
-            filename=f"{gwt_name}.dsp",
-        )
         flopy.mf6.ModflowGwtmst(
             gwt,
             porosity=0.30,
             filename=f"{gwt_name}.mst",
         )
-        flopy.mf6.ModflowGwtssm(
-            gwt,
-            sources=[
-                ("WEL-LEFT", "AUX", species_name),
-                ("RCH-TOP", "AUX", species_name),
-            ],
-            filename=f"{gwt_name}.ssm",
-        )
+        if is_mobile:
+            flopy.mf6.ModflowGwtadv(
+                gwt,
+                scheme="TVD",
+                filename=f"{gwt_name}.adv",
+            )
+            flopy.mf6.ModflowGwtdsp(
+                gwt,
+                alh=0.05,
+                alv=0.05,
+                ath1=0.005,
+                # MT3D TRPV = 0.01 makes transverse spreading normal to
+                # horizontal x-flow 0.05 * 0.01 = 0.0005 m in the z direction.
+                ath2=0.0005,
+                # For vertical flow, the transverse x/y value is AL * TRPT.
+                atv=0.005,
+                diffc=0.0,
+                filename=f"{gwt_name}.dsp",
+            )
+            flopy.mf6.ModflowGwtssm(
+                gwt,
+                sources=[
+                    ("WEL-LEFT", "AUX", species_name),
+                    ("RCH-TOP", "AUX", species_name),
+                ],
+                filename=f"{gwt_name}.ssm",
+            )
 
-        # PHT3D fixes the first six columns to ambient concentrations.
-        cnc_data = [
-            [(layer, 0, col), float(ambient_concentrations[index])]
-            for layer in range(NLAY)
-            for col in range(6)
-            for index, name in enumerate(species_list)
-            if name == species_name
-        ]
+            # PHT3D fixes the first six columns to ambient concentrations.
+            species_index = species_list.index(species_name)
+            cnc_data = [
+                [
+                    (layer, 0, col),
+                    float(ambient_concentrations[species_index]),
+                ]
+                for layer in range(NLAY)
+                for col in range(6)
+            ]
+        else:
+            # With CB_OFFSET=0 PHT3D resets charge imbalance before chemistry.
+            # A full-grid zero CNC provides the same behaviour without adding
+            # a component-specific branch to the reusable coupling module.
+            cnc_data = [
+                [(layer, 0, col), 0.0]
+                for layer in range(NLAY)
+                for col in range(NCOL)
+            ]
         flopy.mf6.ModflowGwtcnc(
             gwt,
-            pname="CNC-UPSTREAM",
+            pname="CNC-UPSTREAM" if is_mobile else "CNC-ZERO-CHARGE",
             maxbound=len(cnc_data),
             stress_period_data={0: cnc_data},
             filename=f"{gwt_name}.cnc",
@@ -284,12 +320,13 @@ def transport_model(
             concentration_filerecord=f"{gwt_name}.ucn",
             saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")],
         )
-        flopy.mf6.ModflowGwfgwt(
-            sim,
-            exgtype="GWF6-GWT6",
-            exgmnamea=gwf_name,
-            exgmnameb=gwt_name,
-            filename=f"{gwt_name}.gwfgwt",
-        )
+        if is_mobile:
+            flopy.mf6.ModflowGwfgwt(
+                sim,
+                exgtype="GWF6-GWT6",
+                exgmnamea=gwf_name,
+                exgmnameb=gwt_name,
+                filename=f"{gwt_name}.gwfgwt",
+            )
 
     sim.write_simulation(silent=True)

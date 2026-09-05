@@ -107,15 +107,20 @@ def build_species_slices(nxyz: int, ncomps: int) -> tuple[slice, ...]:
 
 
 def build_time_step_schedule(modflow_api) -> np.ndarray:
-    """Expand immutable MODFLOW TDIS period data into explicit step lengths."""
+    """Expand retained MODFLOW TDIS period data into explicit step lengths."""
+    # Read the runtime copies: MODFLOW 6.8 releases the __INPUT__ arrays
+    # during initialization. TDIS retains the full arrays for all periods.
     perlen = np.asarray(
-        modflow_api.get_value("__INPUT__/SIM/TDIS/PERLEN"), dtype=float
+        modflow_api.get_value(modflow_api.get_var_address("PERLEN", "TDIS")),
+        dtype=float,
     ).ravel()
     nstp = np.asarray(
-        modflow_api.get_value("__INPUT__/SIM/TDIS/NSTP"), dtype=np.int64
+        modflow_api.get_value(modflow_api.get_var_address("NSTP", "TDIS")),
+        dtype=np.int64,
     ).ravel()
     tsmult = np.asarray(
-        modflow_api.get_value("__INPUT__/SIM/TDIS/TSMULT"), dtype=float
+        modflow_api.get_value(modflow_api.get_var_address("TSMULT", "TDIS")),
+        dtype=float,
     ).ravel()
     if not (perlen.size == nstp.size == tsmult.size):
         raise BackendError("TDIS PERLEN, NSTP, and TSMULT lengths are inconsistent")

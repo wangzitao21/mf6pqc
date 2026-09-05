@@ -12,11 +12,33 @@ sys.path.insert(0, REPO_DIR)
 
 from mf6pqc.mf6pqc import mf6pqc
 
-from modflow_model import NCOL, NLAY, NROW, NXYZ, transport_model
+from modflow_model import (
+    NCOL,
+    NLAY,
+    NROW,
+    NXYZ,
+    TOTAL_TRANSPORT_STEPS,
+    TRANSPORT_SUBSTEPS,
+    transport_model,
+)
 
 
 POROSITY = 0.30
 PHT3D_REACTION_WATER_VOLUME_L = 1.0
+
+# The official model has 120 half-day flow/reaction steps.  Its MMOC
+# advection calculation takes five internal transport substeps per flow step,
+# but PHREEQC is called only at the end of the half-day step (OS=2).  Retain
+# the smaller transport interval for the MF6 discretisation without turning
+# those internal substeps into extra reaction calls.
+REACTION_STEPS = list(
+    range(
+        TRANSPORT_SUBSTEPS,
+        TOTAL_TRANSPORT_STEPS + 1,
+        TRANSPORT_SUBSTEPS,
+    )
+)
+SAVE_STEPS = list(range(50, TOTAL_TRANSPORT_STEPS + 1, 50))
 
 
 # PHT3D uses two NAPL sources beginning at column 14 (one-based). The
@@ -45,6 +67,9 @@ sim_params = {
     "density": 1.0,
     "print_chemistry_mask": 0,
     "componentH2O": False,
+    # PHT3D's CB_OFFSET=0 discards charge imbalance instead of transporting
+    # it.  The case-local Charge GWT model below therefore holds it at zero.
+    "signed_components": (),
     "solution_density_volume": False,
     "db_path": os.path.join(input_data_dir, "phreeqc.dat"),
     "pqi_path": os.path.join(input_data_dir, "input.pqi"),
@@ -53,10 +78,8 @@ sim_params = {
     "output_dir": os.path.join(EXAMPLE_DIR, "output"),
     "if_update_porosity_K": False,
     "if_update_density": False,
-    # PHT3D's MMOC solver takes five reaction/transport substeps in each
-    # 0.5-day flow step. Match that 0.1-day coupling interval while retaining
-    # the official 5-day output sequence through day 60.
-    "save_steps": list(range(50, 601, 50)),
+    "save_steps": SAVE_STEPS,
+    "reaction_steps": REACTION_STEPS,
     "progress_interval": 50,
     "fail_on_nonconvergence": True,
 }
@@ -97,7 +120,7 @@ transport_model(
     ambient_concentrations=ambient_concentrations,
     recharge_concentrations=recharge_concentrations,
     mf6_exe=os.path.join(REPO_DIR, "bin", "mf6.7.0", "mf6.exe"),
-    nstp=600,
+    nstp=TOTAL_TRANSPORT_STEPS,
 )
 
 try:

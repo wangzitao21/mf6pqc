@@ -74,7 +74,7 @@ try:
         species_list=components,
         initial_conc=initial_concentrations,
         inflow_concentrations=inflow_concentrations,
-        mf6_exe=os.path.join(REPO_DIR, "bin", "mf6.7.0", "mf6.exe"),
+        mf6_exe=os.path.join(REPO_DIR, "bin", "mf6.8.0", "mf6.exe"),
     )
 
     # PHT3D uses sequential, non-iterative operator splitting.

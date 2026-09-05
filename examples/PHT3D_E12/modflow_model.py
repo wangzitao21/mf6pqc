@@ -25,37 +25,49 @@ TRANSPORT_SUBSTEPS = 16
 FLOW_PERIOD_DATA = ((0.08333, 260), (1.03919, 3132))
 PULSE_END = FLOW_PERIOD_DATA[0][0]
 
+# The official BTN has MCOMP=5 for Tracer, U(6), Na, N(5), and F.  PHT3D
+# v2.10 additionally transports its internal total-H and total-O quantities
+# and derives pH/pe from their mole balances.  With CB_OFFSET=0, however, the
+# charge imbalance is explicitly *not* transported.  PhreeqcRM exposes all
+# three internal quantities as components, so Charge alone needs a local GWT
+# storage model with no GWF exchange or inlet source.
+PHT3D_MOBILE_COMPONENTS = frozenset(
+    {"H2O", "H", "O", "Tracer", "U", "Na", "N", "F"}
+)
+
 
 def cell_centers_x() -> np.ndarray:
     return (np.arange(NCOL, dtype=float) + 0.5) * DELR
 
 
-def coupling_step_end_times(output_times: np.ndarray) -> np.ndarray:
-    """Return the outer transport/reaction step ends used by PHT3D.
+def flow_step_end_times() -> np.ndarray:
+    """Return PHT3D's MODFLOW flow-step ends with MT3D precision."""
+    step_ends: list[np.ndarray] = []
+    period_start = 0.0
+    for period_length, flow_step_count in FLOW_PERIOD_DATA:
+        step_ends.append(
+            period_start
+            + np.arange(1, flow_step_count + 1, dtype=float)
+            * (period_length / flow_step_count)
+        )
+        period_start += period_length
+    return np.unique(np.concatenate(step_ends).astype(np.float32)).astype(float)
 
-    PHT3D calls PHREEQC at the end of every MODFLOW flow step and whenever a
-    requested ``TIMPRS`` output falls inside a flow step.  ``PERCEL`` controls
-    the ULTIMATE advection calculation; it does *not* create extra outer
-    PHREEQC calls.  This distinction is visible in the official
-    ``PHT3D001.MAS`` file, which contains 4,388 completed steps.
+
+def coupling_step_end_times(output_times: np.ndarray) -> np.ndarray:
+    """Return the outer transport-event ends used by PHT3D.
+
+    ``OS=2`` calls PHREEQC only at MODFLOW flow-step ends.  Requested
+    ``TIMPRS`` outputs can still split an MT3D transport step, but they are
+    transport/output events rather than additional reaction events.
 
     MT3D stores elapsed time in single precision.  Converting both sets of
     events to float32 before taking their union is therefore important: five
     requested outputs coincide with flow-step ends only after the same
     rounding used by PHT3D.
     """
-    flow_step_ends: list[np.ndarray] = []
-    period_start = 0.0
-    for period_length, flow_step_count in FLOW_PERIOD_DATA:
-        flow_step_ends.append(
-            period_start
-            + np.arange(1, flow_step_count + 1, dtype=float)
-            * (period_length / flow_step_count)
-        )
-        period_start += period_length
-
     events = np.concatenate(
-        [*flow_step_ends, np.asarray(output_times, dtype=float)]
+        [flow_step_end_times(), np.asarray(output_times, dtype=float)]
     ).astype(np.float32)
     events = np.unique(events).astype(float)
     return events[events > 0.0]
@@ -68,7 +80,8 @@ def coupling_period_data(output_times: np.ndarray) -> list[tuple[float, int, flo
     this near-unit-Courant column.  A conservative-tracer convergence study
     gives NRMSE values of 6.3%, 1.9%, 1.2%, and 0.9% for 1, 8, 16, and 32
     transport substeps, respectively.  Sixteen is the practical knee of that
-    curve.  PHREEQC still runs only once at the end of each outer interval.
+    curve.  Reaction timing is selected separately in ``run.py`` so TIMPRS
+    events do not implicitly become chemistry calls.
     """
     step_ends = coupling_step_end_times(output_times)
     step_lengths = np.diff(np.concatenate(([0.0], step_ends)))
@@ -99,7 +112,7 @@ def transport_model(
     mf6_exe: str | Path,
     longitudinal_dispersivity: float = LONGITUDINAL_DISPERSIVITY,
 ) -> None:
-    """Build the official column using PHT3D's reaction-event schedule."""
+    """Build the official column on PHT3D's transport-event schedule."""
     sim = flopy.mf6.MFSimulation(
         sim_name="model",
         sim_ws=str(sim_ws),
@@ -187,8 +200,11 @@ def transport_model(
         species_list, initial_conc
     ).items():
         gwt_name = get_gwt_model_name(species)
-        # H and O include the water inventory (roughly 111 and 55 mol/L).
-        # With very short TIMPRS-generated steps, roundoff in those two
+        is_mobile = species in PHT3D_MOBILE_COMPONENTS
+        if not is_mobile and species != "Charge":
+            raise ValueError(f"Unexpected immobile PHT3D component: {species}")
+        # H2O is roughly 55 mol/L, while H/O are transported separately.
+        # With very short TIMPRS-generated steps, roundoff in these
         # equations cannot satisfy a 1e-12 absolute mass-rate residual even
         # after the concentration update is exactly zero.  A 1e-9 residual
         # is still more than seven orders below their inlet mass rates.  Keep
@@ -237,37 +253,54 @@ def transport_model(
         flopy.mf6.ModflowGwtic(
             gwt, strt=concentration, filename=f"{gwt_name}.ic"
         )
-        flopy.mf6.ModflowGwtadv(
-            gwt, scheme="TVD", filename=f"{gwt_name}.adv"
-        )
-        flopy.mf6.ModflowGwtdsp(
-            gwt,
-            xt3d_off=True,
-            alh=longitudinal_dispersivity,
-            ath1=0.1 * longitudinal_dispersivity,
-            diffc=0.0,
-            filename=f"{gwt_name}.dsp",
-        )
         flopy.mf6.ModflowGwtmst(
             gwt, porosity=POROSITY, filename=f"{gwt_name}.mst"
         )
-        flopy.mf6.ModflowGwtssm(
-            gwt,
-            sources=[("WEL-INLET", "AUX", species)],
-            filename=f"{gwt_name}.ssm",
-        )
+        if is_mobile:
+            flopy.mf6.ModflowGwtadv(
+                gwt, scheme="TVD", filename=f"{gwt_name}.adv"
+            )
+            flopy.mf6.ModflowGwtdsp(
+                gwt,
+                xt3d_off=True,
+                alh=longitudinal_dispersivity,
+                ath1=0.1 * longitudinal_dispersivity,
+                diffc=0.0,
+                filename=f"{gwt_name}.dsp",
+            )
+            flopy.mf6.ModflowGwtssm(
+                gwt,
+                sources=[("WEL-INLET", "AUX", species)],
+                filename=f"{gwt_name}.ssm",
+            )
+        else:
+            # PHT3D CB_OFFSET=0 discards the charge imbalance before every
+            # chemistry call.  A storage-only model would incorrectly retain
+            # and accumulate PHREEQC's positive charge residual.  Holding all
+            # Charge cells at zero reproduces the official reset without a
+            # special-case change to MF6PQC's generic coupling loop.
+            flopy.mf6.ModflowGwtcnc(
+                gwt,
+                pname="CNC-ZERO-CHARGE",
+                maxbound=NXYZ,
+                stress_period_data={
+                    0: [[(0, 0, column), 0.0] for column in range(NCOL)]
+                },
+                filename=f"{gwt_name}.cnc",
+            )
         flopy.mf6.ModflowGwtoc(
             gwt,
             budget_filerecord=f"{gwt_name}.cbc",
             concentration_filerecord=f"{gwt_name}.ucn",
             saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")],
         )
-        flopy.mf6.ModflowGwfgwt(
-            sim,
-            exgtype="GWF6-GWT6",
-            exgmnamea=gwf.name,
-            exgmnameb=gwt.name,
-            filename=f"{gwt_name}.gwfgwt",
-        )
+        if is_mobile:
+            flopy.mf6.ModflowGwfgwt(
+                sim,
+                exgtype="GWF6-GWT6",
+                exgmnamea=gwf.name,
+                exgmnameb=gwt.name,
+                filename=f"{gwt_name}.gwfgwt",
+            )
 
     sim.write_simulation(silent=True)

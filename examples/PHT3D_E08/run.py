@@ -30,7 +30,7 @@ sim_params = {
 
     "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
     "pqi_path": os.path.join(example_dir, "input_data/input.pqi"),
-    "modflow_dll_path": "./bin/mf6.7.0/libmf6.dll",
+    "modflow_dll_path": "./bin/mf6.8.0/libmf6.dll",
     "workspace": os.path.join(example_dir, "simulation"),
     "output_dir": os.path.join(example_dir, "output"),
 

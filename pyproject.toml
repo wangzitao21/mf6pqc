@@ -42,6 +42,7 @@ examples = [
   "pandas>=2.0,<3",
   "matplotlib>=3.7,<4",
   "seaborn>=0.12,<1",
+  "gstools>=1.6,<2",
 ]
 test = [
   "coverage>=7.6,<8",
