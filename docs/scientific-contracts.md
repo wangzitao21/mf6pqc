@@ -8,7 +8,7 @@
 |---|---|
 | MODFLOW 时间 | 由 TDIS 决定；当前 examples 使用 day |
 | PhreeqcRM 时间 | MF6PQC 将 TDIS 时间乘以 86400 后以 second 传入 |
-| 浓度 | 数值必须与 GWT 和 PhreeqcRM 的案例定义一致；现有案例通常使用 mol/L 的数值 |
+| 浓度 | 数值必须与 GWT 和 PhreeqcRM 的案例定义一致；传输向量采用 mol/L；selected output 中 TOT() 等表达式可为 mol/kgw，须逐列标注 |
 | 密度输入 | 公共 `density` 字段为 kg/L |
 | BUY 密度 | 写入 MODFLOW 时转换为 kg/m³ |
 | NPF `K11/K33` | 水力传导系数，单位为 MODFLOW length/time |
@@ -103,3 +103,7 @@ SIA 同时检查：
 - 孔隙率、K、密度和扩散的物理范围；
 - 与解析解、原软件输出或公开观测的量化误差；
 - 所用数据库、MODFLOW、PhreeqcRM 和 MF6PQC 版本。
+
+## 发布前实现约束
+
+当前版本在加载 MODFLOW 前检查 TDIS，拒绝非 DAYS 单位和 ATS。计算密度从 PhreeqcRM 独立读取，不再覆盖 selected output 的最后一行。完整化学打印受 `print_chemistry_mask` 控制，案例默认关闭逐单元化学文本输出以减少 I/O，数值数组照常保存。

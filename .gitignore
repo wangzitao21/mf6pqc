@@ -24,11 +24,19 @@ dist/
 /bin/
 
 # Generated model workspaces and outputs
-/examples/*/simulation/
-/examples/*/output/
+/examples/*/simulation/*
+!/examples/*/simulation/.gitkeep
+/examples/*/output/*
+!/examples/*/output/.gitkeep
 /cases/*/simulation/
 /cases/*/output/
 
 # Local case and reference collections
 /cases/
-/references/
+/article/
+
+# Local release verification artifacts
+/.release-checks/
+
+# Archived local cleanup artifacts
+/.venv-verify/

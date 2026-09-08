@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import numpy as np
@@ -29,19 +30,20 @@ from mf6pqc.coupling.state import StandardCouplingState
 from mf6pqc.exceptions import CouplingError
 from mf6pqc.feedback import update_medium_properties, write_conductivity_for_step
 
+_logger = logging.getLogger(__name__)
+
 
 def validate_strang_schedule(schedule: np.ndarray) -> np.ndarray:
     """Validate and return logical durations for paired TDIS half-steps."""
     values = np.asarray(schedule, dtype=float).ravel()
     if values.size == 0 or values.size % 2:
         raise CouplingError(
-            "Strang splitting requires a non-empty even number of MODFLOW "
-            "TDIS steps"
+            "Strang splitting requires a non-empty even number of MODFLOW TDIS steps"
         )
+    if not np.all(np.isfinite(values)) or np.any(values <= 0.0):
+        raise CouplingError("Strang step lengths must be finite and positive")
     pairs = values.reshape(-1, 2)
-    equal = np.isclose(
-        pairs[:, 0], pairs[:, 1], rtol=1.0e-10, atol=MIN_TIME_STEP
-    )
+    equal = np.isclose(pairs[:, 0], pairs[:, 1], rtol=1.0e-10, atol=MIN_TIME_STEP)
     if not np.all(equal):
         pair_index = int(np.flatnonzero(~equal)[0])
         first_half, second_half = pairs[pair_index]
@@ -81,9 +83,7 @@ def strang_time_step(sim, state: StandardCouplingState) -> None:
     index = state.transport_step
     schedule = state.time_step_schedule
     if index + 1 >= schedule.size:
-        raise CouplingError(
-            "Strang splitting requires pairs of equal-length MODFLOW TDIS steps"
-        )
+        raise CouplingError("Strang splitting requires pairs of equal-length MODFLOW TDIS steps")
     first_half = float(schedule[index])
     second_half = float(schedule[index + 1])
     if not np.isclose(first_half, second_half, rtol=1.0e-10, atol=MIN_TIME_STEP):
@@ -129,9 +129,7 @@ def strang_time_step(sim, state: StandardCouplingState) -> None:
     # affect the second transport half-step for a true T/2 -> R -> T/2
     # composition.  Deferring them to the logical endpoint is a lagged SNIA
     # feedback, not Strang splitting.
-    state.current_k11 = update_medium_properties(
-        sim, state.current_k11, state.logical_step
-    )
+    state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
     density = get_calculated_density(sim) if sim.if_update_density else None
     solve_transport_substep(
         sim,
@@ -174,7 +172,7 @@ def run_strang(sim) -> None:
     """Run symmetric Strang splitting to the TDIS end time."""
     validate_setup(sim)
     initialize_modflow6(sim)
-    print("\n--- Starting reactive transport simulation (Strang splitting) ---")
+    _logger.info("\n--- Starting reactive transport simulation (Strang splitting) ---")
     start = time.perf_counter()
     cache_basic_geometry(sim)
     state = build_standard_state(sim)

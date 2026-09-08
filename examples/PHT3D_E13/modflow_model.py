@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import _example_support as _example_support
 import flopy
 import numpy as np
 
 from mf6pqc.utils import get_gwt_model_name
-
 
 NLAY = 1
 NROW = 1
@@ -48,9 +51,7 @@ def transport_model(
         exe_name=str(mf6_exe),
         verbosity_level=0,
     )
-    flopy.mf6.ModflowTdis(
-        sim, time_units="DAYS", nper=2, perioddata=PERIOD_DATA
-    )
+    flopy.mf6.ModflowTdis(sim, time_units="DAYS", nper=2, perioddata=PERIOD_DATA)
     gwf = flopy.mf6.ModflowGwf(sim, modelname="gwf_model", save_flows=True)
     flow_ims = flopy.mf6.ModflowIms(
         sim,
@@ -147,12 +148,8 @@ def transport_model(
             botm=BOTM,
             filename=f"{gwt_name}.dis",
         )
-        flopy.mf6.ModflowGwtic(
-            gwt, strt=concentration, filename=f"{gwt_name}.ic"
-        )
-        flopy.mf6.ModflowGwtadv(
-            gwt, scheme="TVD", filename=f"{gwt_name}.adv"
-        )
+        flopy.mf6.ModflowGwtic(gwt, strt=concentration, filename=f"{gwt_name}.ic")
+        flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwt_name}.adv")
         flopy.mf6.ModflowGwtdsp(
             gwt,
             xt3d_off=True,
@@ -161,14 +158,10 @@ def transport_model(
             diffc=0.0,
             filename=f"{gwt_name}.dsp",
         )
-        flopy.mf6.ModflowGwtmst(
-            gwt, porosity=POROSITY, filename=f"{gwt_name}.mst"
-        )
+        flopy.mf6.ModflowGwtmst(gwt, porosity=POROSITY, filename=f"{gwt_name}.mst")
         flopy.mf6.ModflowGwtssm(
             gwt,
-            sources=[
-                ("WEL-INLET", "AUX", auxiliary_names[species_index])
-            ],
+            sources=[("WEL-INLET", "AUX", auxiliary_names[species_index])],
             filename=f"{gwt_name}.ssm",
         )
         flopy.mf6.ModflowGwtoc(

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import _example_support as _example_support
 import flopy
 import numpy as np
+from _example_support import executable_path
 
 from mf6pqc.utils import get_gwt_model_name
 
@@ -31,7 +37,7 @@ def build_transport_model(
     simulation = flopy.mf6.MFSimulation(
         sim_name="splitting_decay",
         sim_ws=sim_ws,
-        exe_name="./bin/mf6.7.0/mf6.exe",
+        exe_name=executable_path("mf6.7.0"),
         verbosity_level=0,
     )
     flopy.mf6.ModflowTdis(
@@ -41,9 +47,7 @@ def build_transport_model(
         perioddata=[(perlen, nstp, 1.0)],
     )
 
-    gwf = flopy.mf6.ModflowGwf(
-        simulation, modelname="gwf_model", save_flows=True
-    )
+    gwf = flopy.mf6.ModflowGwf(simulation, modelname="gwf_model", save_flows=True)
     flow_ims = flopy.mf6.ModflowIms(
         simulation,
         pname="flow_ims",
@@ -138,9 +142,7 @@ def build_transport_model(
             maxbound=ncol,
             stress_period_data=src_data,
         )
-        flopy.mf6.ModflowGwtssm(
-            gwt, sources=[("inlet", "AUX", species_name)]
-        )
+        flopy.mf6.ModflowGwtssm(gwt, sources=[("inlet", "AUX", species_name)])
         if species_name == boundary_node_species:
             # The published problem prescribes C(0,t), whereas an AUX value
             # alone is an inflow concentration.  CNC makes the first model

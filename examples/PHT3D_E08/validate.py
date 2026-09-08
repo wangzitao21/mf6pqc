@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import _example_support as _example_support
+import numpy as np
+from _example_support import runtime_path
 
 CASE_DIR = Path(__file__).resolve().parent
 REFERENCE_FILE = CASE_DIR / "input_data" / "official_reference.npz"
@@ -17,15 +21,14 @@ REFERENCE_SPECIES = ("Pce", "Vc", "Cl", "Na")
 
 
 def load_results() -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
-    headings = (CASE_DIR / "output" / "results_headings.txt").read_text().splitlines()
-    raw = np.load(CASE_DIR / "output" / "results.npy")
+    headings = (runtime_path(__file__, "output") / "results_headings.txt").read_text().splitlines()
+    raw = np.load(runtime_path(__file__, "output") / "results.npy")
     expected_shape = (NTIME, len(headings), NROW * NCOL)
     if raw.shape != expected_shape:
         raise ValueError(f"Expected result shape {expected_shape}, got {raw.shape}")
 
     mf6pqc = {
-        name: raw[:, headings.index(name)].reshape(NTIME, NROW, NCOL)
-        for name in REFERENCE_SPECIES
+        name: raw[:, headings.index(name)].reshape(NTIME, NROW, NCOL) for name in REFERENCE_SPECIES
     }
     with np.load(REFERENCE_FILE) as reference:
         official = {name: reference[name] for name in REFERENCE_SPECIES}
@@ -59,4 +62,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     main()

@@ -117,7 +117,7 @@ MIN3P 的全局隐式流程可以在非线性失败后缩短并重启时间步�
 | 风险 | 最小验证资产 |
 |---|---|
 | 反应时间起点错误 | mock 调用顺序测试 + 使用 `TOTAL_TIME` 的化学测试 |
-| SIA 重复推进动力学状态 | `Splitting_KineticDecay/reaction_only_check.py` |
+| SIA 重复推进动力学状态 | `Splitting_KineticDecay/validate.py` |
 | SNIA/Strang/SIA 算子顺序 | `tests/test_splitting_algorithms.py` |
 | SIA 假收敛 | 源项、endpoint 闭合和未松弛残差单元测试 |
 | Strang 半步表错误 | TDIS 配对预检测试 |

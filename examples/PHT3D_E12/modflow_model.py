@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import _example_support as _example_support
 import flopy
 import numpy as np
 
 from mf6pqc.utils import get_gwt_model_name
-
 
 NLAY = 1
 NROW = 1
@@ -31,9 +34,7 @@ PULSE_END = FLOW_PERIOD_DATA[0][0]
 # charge imbalance is explicitly *not* transported.  PhreeqcRM exposes all
 # three internal quantities as components, so Charge alone needs a local GWT
 # storage model with no GWF exchange or inlet source.
-PHT3D_MOBILE_COMPONENTS = frozenset(
-    {"H2O", "H", "O", "Tracer", "U", "Na", "N", "F"}
-)
+PHT3D_MOBILE_COMPONENTS = frozenset({"H2O", "H", "O", "Tracer", "U", "Na", "N", "F"})
 
 
 def cell_centers_x() -> np.ndarray:
@@ -47,8 +48,7 @@ def flow_step_end_times() -> np.ndarray:
     for period_length, flow_step_count in FLOW_PERIOD_DATA:
         step_ends.append(
             period_start
-            + np.arange(1, flow_step_count + 1, dtype=float)
-            * (period_length / flow_step_count)
+            + np.arange(1, flow_step_count + 1, dtype=float) * (period_length / flow_step_count)
         )
         period_start += period_length
     return np.unique(np.concatenate(step_ends).astype(np.float32)).astype(float)
@@ -66,9 +66,9 @@ def coupling_step_end_times(output_times: np.ndarray) -> np.ndarray:
     requested outputs coincide with flow-step ends only after the same
     rounding used by PHT3D.
     """
-    events = np.concatenate(
-        [flow_step_end_times(), np.asarray(output_times, dtype=float)]
-    ).astype(np.float32)
+    events = np.concatenate([flow_step_end_times(), np.asarray(output_times, dtype=float)]).astype(
+        np.float32
+    )
     events = np.unique(events).astype(float)
     return events[events > 0.0]
 
@@ -87,9 +87,7 @@ def coupling_period_data(output_times: np.ndarray) -> list[tuple[float, int, flo
     step_lengths = np.diff(np.concatenate(([0.0], step_ends)))
     if np.any(step_lengths <= 0.0):
         raise ValueError("PHT3D coupling times must be strictly increasing")
-    return [
-        (float(length), TRANSPORT_SUBSTEPS, 1.0) for length in step_lengths
-    ]
+    return [(float(length), TRANSPORT_SUBSTEPS, 1.0) for length in step_lengths]
 
 
 def _component_fields(
@@ -167,13 +165,14 @@ def transport_model(
 
     pulse = [[(0, 0, 0), FLOW_RATE, *pulse_concentrations]]
     chase = [[(0, 0, 0), FLOW_RATE, *chase_concentrations]]
-    pulse_end_period = next(
-        index
-        for index, elapsed in enumerate(
-            np.cumsum([entry[0] for entry in period_data])
+    pulse_end_period = (
+        next(
+            index
+            for index, elapsed in enumerate(np.cumsum([entry[0] for entry in period_data]))
+            if np.isclose(elapsed, PULSE_END)
         )
-        if np.isclose(elapsed, PULSE_END)
-    ) + 1
+        + 1
+    )
     flopy.mf6.ModflowGwfwel(
         gwf,
         pname="WEL-INLET",
@@ -196,9 +195,7 @@ def transport_model(
         saverecord=[("HEAD", "LAST"), ("BUDGET", "LAST")],
     )
 
-    for species, concentration in _component_fields(
-        species_list, initial_conc
-    ).items():
+    for species, concentration in _component_fields(species_list, initial_conc).items():
         gwt_name = get_gwt_model_name(species)
         is_mobile = species in PHT3D_MOBILE_COMPONENTS
         if not is_mobile and species != "Charge":
@@ -209,9 +206,7 @@ def transport_model(
         # after the concentration update is exactly zero.  A 1e-9 residual
         # is still more than seven orders below their inlet mass rates.  Keep
         # the stricter criterion for low-concentration Tracer and U.
-        transport_rclose = (
-            1.0e-9 if species in {"H2O", "H", "O"} else 1.0e-12
-        )
+        transport_rclose = 1.0e-9 if species in {"H2O", "H", "O"} else 1.0e-12
         gwt = flopy.mf6.ModflowGwt(
             sim,
             modelname=gwt_name,
@@ -250,16 +245,10 @@ def transport_model(
             botm=BOTM,
             filename=f"{gwt_name}.dis",
         )
-        flopy.mf6.ModflowGwtic(
-            gwt, strt=concentration, filename=f"{gwt_name}.ic"
-        )
-        flopy.mf6.ModflowGwtmst(
-            gwt, porosity=POROSITY, filename=f"{gwt_name}.mst"
-        )
+        flopy.mf6.ModflowGwtic(gwt, strt=concentration, filename=f"{gwt_name}.ic")
+        flopy.mf6.ModflowGwtmst(gwt, porosity=POROSITY, filename=f"{gwt_name}.mst")
         if is_mobile:
-            flopy.mf6.ModflowGwtadv(
-                gwt, scheme="TVD", filename=f"{gwt_name}.adv"
-            )
+            flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwt_name}.adv")
             flopy.mf6.ModflowGwtdsp(
                 gwt,
                 xt3d_off=True,
@@ -283,9 +272,7 @@ def transport_model(
                 gwt,
                 pname="CNC-ZERO-CHARGE",
                 maxbound=NXYZ,
-                stress_period_data={
-                    0: [[(0, 0, column), 0.0] for column in range(NCOL)]
-                },
+                stress_period_data={0: [[(0, 0, column), 0.0] for column in range(NCOL)]},
                 filename=f"{gwt_name}.cnc",
             )
         flopy.mf6.ModflowGwtoc(

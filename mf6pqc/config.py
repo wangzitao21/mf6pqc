@@ -14,7 +14,7 @@ from typing import Any
 from mf6pqc.backends import BackendFactory
 from mf6pqc.constants import SECONDS_PER_DAY
 from mf6pqc.permeability import BasePermeabilityUpdater
-from mf6pqc.types import ArrayLike
+from mf6pqc.types import ArrayLike, SIARateEvaluator
 
 
 @dataclass(slots=True)
@@ -65,9 +65,7 @@ class FeedbackOptions:
     mineral_molar_volumes: dict[str, float] = field(default_factory=dict)
     permeability_updater: BasePermeabilityUpdater | None = None
     vertical_to_horizontal_k_ratio: float = 0.6
-    boundary_conductance_updates: dict[str, dict[str, Any]] = field(
-        default_factory=dict
-    )
+    boundary_conductance_updates: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -101,6 +99,7 @@ class SIAOptions:
     source_relaxation: float = 0.5
     density_relaxation: float = 0.5
     fail_on_nonconvergence: bool = False
+    rate_evaluator: SIARateEvaluator | None = None
 
 
 @dataclass(slots=True)
@@ -163,17 +162,14 @@ class SimulationConfig:
             "reaction_steps": self.reaction_steps,
             "progress_interval": self.output.progress_interval,
             "fail_on_nonconvergence": self.fail_on_modflow_nonconvergence,
-            "boundary_conductance_updates": (
-                self.feedback.boundary_conductance_updates
-            ),
+            "boundary_conductance_updates": (self.feedback.boundary_conductance_updates),
             "water_only_sink_rates": self.feedback.water_only_sink_rates,
-            "use_phreeqc_calculated_density": (
-                self.feedback.use_phreeqc_calculated_density
-            ),
+            "use_phreeqc_calculated_density": (self.feedback.use_phreeqc_calculated_density),
             "porosity_update_mask": self.feedback.porosity_update_mask,
             "sia_max_iterations": self.sia.maximum_iterations,
             "sia_rtol": self.sia.relative_tolerance,
             "sia_atol": self.sia.absolute_tolerance,
+            "sia_rate_evaluator": self.sia.rate_evaluator,
             "sia_source_relaxation": self.sia.source_relaxation,
             "sia_density_relaxation": self.sia.density_relaxation,
             "sia_fail_on_nonconvergence": self.sia.fail_on_nonconvergence,
@@ -188,9 +184,7 @@ class SimulationConfig:
             "npf_package_name": self.energy.npf_package_name,
             "vsc_package_name": self.energy.vsc_package_name,
             "est_package_name": self.energy.est_package_name,
-            "sync_gwe_temperature_to_phreeqc": (
-                self.energy.sync_temperature_to_chemistry
-            ),
+            "sync_gwe_temperature_to_phreeqc": (self.energy.sync_temperature_to_chemistry),
             "validate_initial_gwe_fields": self.energy.validate_initial_fields,
             "initial_gwe_field_tolerance": self.energy.initial_field_tolerance,
             "backend_factory": self.backend_factory,

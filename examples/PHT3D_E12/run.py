@@ -5,15 +5,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import _example_support as _example_support
 import numpy as np
-
-
-CASE_DIR = Path(__file__).resolve().parent
-REPOSITORY_DIR = CASE_DIR.parents[1]
-sys.path.insert(0, str(REPOSITORY_DIR))
-
-from mf6pqc.mf6pqc import mf6pqc
-
+from _example_support import executable_path, library_path, runtime_path
 from modflow_model import (
     NXYZ,
     POROSITY,
@@ -24,118 +20,117 @@ from modflow_model import (
     transport_model,
 )
 
-
-def save_step_numbers(
-    target_days: tuple[float, ...],
-    coupling_times: np.ndarray,
-) -> list[int]:
-    """Map official PHT3D output times to one-based MF6 coupling steps."""
-    saved_steps: list[int] = []
-    for target in target_days:
-        index = int(np.searchsorted(coupling_times, target))
-        if index == len(coupling_times) or not np.isclose(
-            coupling_times[index], target, rtol=0.0, atol=1.0e-10
-        ):
-            raise ValueError(f"Official output time {target} is not a coupling step")
-        saved_steps.append(index + 1)
-    return [step * TRANSPORT_SUBSTEPS for step in saved_steps]
+from mf6pqc import MF6PQC
 
 
-SAVE_HOURS = (1.5, 3.0, 12.5)
-INPUT_DIR = CASE_DIR / "input_data"
-# Use the actual PHT3D UCN output times selected by the verified notebook,
-# rather than nominal hour labels or hand-copied save-time indices.
-with np.load(INPUT_DIR / "official_reference.npz") as reference:
-    SAVE_TARGET_DAYS = tuple(reference["actual_hours"] / 24.0)
-    COUPLING_TIMES = coupling_step_end_times(reference["output_days"])
-    PERIOD_DATA = coupling_period_data(reference["output_days"])
-if len(PERIOD_DATA) != 4_388:
-    raise ValueError(
-        "Official E12 schedule must contain 4,388 transport intervals; "
-        f"reconstructed {len(PERIOD_DATA)}"
-    )
-SAVE_STEPS = save_step_numbers(SAVE_TARGET_DAYS, COUPLING_TIMES)
-FLOW_REACTION_STEPS = save_step_numbers(
-    tuple(flow_step_end_times()), COUPLING_TIMES
-)
-# PHT3D OS=2 reacts after flow steps only.  MF6PQC currently records selected
-# output only on reaction steps, so include the three requested comparison
-# times as explicit compatibility points; do not turn the other 999 TIMPRS
-# transport/output events into reactions.
-REACTION_STEPS = sorted(set(FLOW_REACTION_STEPS) | set(SAVE_STEPS))
+def main() -> None:
+    CASE_DIR = Path(__file__).resolve().parent
+    CASE_DIR.parents[1]
 
-params = {
-    "case_name": "PHT3D_E12",
-    "nxyz": NXYZ,
-    "nthreads": 6,
-    "temperature": 25.0,
-    "pressure": 1.0,
-    "porosity": POROSITY,
-    "saturation": 1.0,
-    "density": 1.0,
-    "print_chemistry_mask": 0,
-    # Transport water, excess H, and excess O separately.  PhreeqcRM documents
-    # this as the robust formulation; transporting total H/O requires 8--10
-    # accurate significant digits and visibly perturbs pH in this dilute case.
-    "componentH2O": True,
-    # PHT3D CB_OFFSET=0 does not transport charge imbalance.  Charge is given
-    # a local storage-only GWT model below; flooring its tiny negative setup
-    # residual is an explicit case-local compatibility choice.
-    "signed_components": (),
-    "solution_density_volume": False,
-    "db_path": str(INPUT_DIR / "phreeqc.dat"),
-    "pqi_path": str(INPUT_DIR / "input.pqi"),
-    "modflow_dll_path": str(
-        REPOSITORY_DIR / "bin" / "mf6.7.0" / "libmf6.dll"
-    ),
-    "workspace": str(CASE_DIR / "simulation"),
-    "output_dir": str(CASE_DIR / "output"),
-    "if_update_porosity_K": False,
-    "if_update_density": False,
-    "save_steps": SAVE_STEPS,
-    "reaction_steps": REACTION_STEPS,
-    "progress_interval": 100 * TRANSPORT_SUBSTEPS,
-    "fail_on_nonconvergence": True,
-}
+    def save_step_numbers(
+        target_days: tuple[float, ...],
+        coupling_times: np.ndarray,
+    ) -> list[int]:
+        """Map official PHT3D output times to one-based MF6 coupling steps."""
+        saved_steps: list[int] = []
+        for target in target_days:
+            index = int(np.searchsorted(coupling_times, target))
+            if index == len(coupling_times) or not np.isclose(
+                coupling_times[index], target, rtol=0.0, atol=1.0e-10
+            ):
+                raise ValueError(f"Official output time {target} is not a coupling step")
+            saved_steps.append(index + 1)
+        return [step * TRANSPORT_SUBSTEPS for step in saved_steps]
 
-simulator = mf6pqc(**params)
-initial_concentrations = simulator.setup(
-    ic_map={"solution": 0, "surface": 1}
-)
-components = simulator.get_components()
-pulse_concentrations = simulator.get_initial_concentrations(1)
-chase_concentrations = simulator.get_initial_concentrations(0)
+    SAVE_HOURS = (1.5, 3.0, 12.5)
+    INPUT_DIR = CASE_DIR / "input_data"
+    # Use the actual PHT3D UCN output times selected by the verified notebook,
+    # rather than nominal hour labels or hand-copied save-time indices.
+    with np.load(INPUT_DIR / "official_reference.npz") as reference:
+        SAVE_TARGET_DAYS = tuple(reference["actual_hours"] / 24.0)
+        COUPLING_TIMES = coupling_step_end_times(reference["output_days"])
+        PERIOD_DATA = coupling_period_data(reference["output_days"])
+    if len(PERIOD_DATA) != 4_388:
+        raise ValueError(
+            "Official E12 schedule must contain 4,388 transport intervals; "
+            f"reconstructed {len(PERIOD_DATA)}"
+        )
+    SAVE_STEPS = save_step_numbers(SAVE_TARGET_DAYS, COUPLING_TIMES)
+    FLOW_REACTION_STEPS = save_step_numbers(tuple(flow_step_end_times()), COUPLING_TIMES)
+    # PHT3D OS=2 reacts after flow steps only.  MF6PQC currently records selected
+    # output only on reaction steps, so include the three requested comparison
+    # times as explicit compatibility points; do not turn the other 999 TIMPRS
+    # transport/output events into reactions.
+    REACTION_STEPS = sorted(set(FLOW_REACTION_STEPS) | set(SAVE_STEPS))
 
-# PHT3D's CB_OFFSET=0 discards charge imbalance instead of passing it through
-# MT3D.  Start the storage-only Charge model from exactly zero; PHREEQC then
-# preserves zero (apart from roundoff) at subsequent reaction calls.
-charge_index = components.index("Charge")
-initial_concentrations[
-    charge_index * NXYZ : (charge_index + 1) * NXYZ
-] = 0.0
-pulse_concentrations[charge_index] = 0.0
-chase_concentrations[charge_index] = 0.0
+    params = {
+        "case_name": "PHT3D_E12",
+        "nxyz": NXYZ,
+        "nthreads": 6,
+        "temperature": 25.0,
+        "pressure": 1.0,
+        "porosity": POROSITY,
+        "saturation": 1.0,
+        "density": 1.0,
+        "print_chemistry_mask": 0,
+        # Transport water, excess H, and excess O separately.  PhreeqcRM documents
+        # this as the robust formulation; transporting total H/O requires 8--10
+        # accurate significant digits and visibly perturbs pH in this dilute case.
+        "componentH2O": True,
+        # PHT3D CB_OFFSET=0 does not transport charge imbalance.  Charge is given
+        # a local storage-only GWT model below; flooring its tiny negative setup
+        # residual is an explicit case-local compatibility choice.
+        "signed_components": (),
+        "solution_density_volume": False,
+        "db_path": str(INPUT_DIR / "phreeqc.dat"),
+        "pqi_path": str(INPUT_DIR / "input.pqi"),
+        "modflow_dll_path": library_path("mf6.7.0"),
+        "workspace": str(runtime_path(__file__, "simulation")),
+        "output_dir": str(runtime_path(__file__, "output")),
+        "if_update_porosity_K": False,
+        "if_update_density": False,
+        "save_steps": SAVE_STEPS,
+        "reaction_steps": REACTION_STEPS,
+        "progress_interval": 100 * TRANSPORT_SUBSTEPS,
+        "fail_on_nonconvergence": True,
+    }
 
-transport_model(
-    sim_ws=params["workspace"],
-    species_list=components,
-    initial_conc=initial_concentrations,
-    pulse_concentrations=pulse_concentrations,
-    chase_concentrations=chase_concentrations,
-    period_data=PERIOD_DATA,
-    mf6_exe=REPOSITORY_DIR / "bin" / "mf6.7.0" / "mf6.exe",
-)
+    with MF6PQC(**params) as simulator:
+        initial_concentrations = simulator.setup(ic_map={"solution": 0, "surface": 1})
+        components = simulator.get_components()
+        pulse_concentrations = simulator.get_initial_concentrations(1)
+        chase_concentrations = simulator.get_initial_concentrations(0)
 
-try:
-    simulator.run()
-    simulator.save_results()
-finally:
-    simulator.finalize()
+        # PHT3D's CB_OFFSET=0 discards charge imbalance instead of passing it through
+        # MT3D.  Start the storage-only Charge model from exactly zero; PHREEQC then
+        # preserves zero (apart from roundoff) at subsequent reaction calls.
+        charge_index = components.index("Charge")
+        initial_concentrations[charge_index * NXYZ : (charge_index + 1) * NXYZ] = 0.0
+        pulse_concentrations[charge_index] = 0.0
+        chase_concentrations[charge_index] = 0.0
 
-print(
-    f"Saved target hours {SAVE_HOURS} at exact PHT3D coupling steps "
-    f"{[step // TRANSPORT_SUBSTEPS for step in SAVE_STEPS]}; "
-    f"{len(FLOW_REACTION_STEPS)} official flow-step reactions "
-    f"plus {len(set(SAVE_STEPS) - set(FLOW_REACTION_STEPS))} save points over "
-    f"{len(PERIOD_DATA) * TRANSPORT_SUBSTEPS} MF6 transport steps."
-)
+        transport_model(
+            sim_ws=params["workspace"],
+            species_list=components,
+            initial_conc=initial_concentrations,
+            pulse_concentrations=pulse_concentrations,
+            chase_concentrations=chase_concentrations,
+            period_data=PERIOD_DATA,
+            mf6_exe=executable_path("mf6.7.0"),
+        )
+
+        simulator.run()
+        simulator.save_results()
+
+        print(
+            f"Saved target hours {SAVE_HOURS} at exact PHT3D coupling steps "
+            f"{[step // TRANSPORT_SUBSTEPS for step in SAVE_STEPS]}; "
+            f"{len(FLOW_REACTION_STEPS)} official flow-step reactions "
+            f"plus {len(set(SAVE_STEPS) - set(FLOW_REACTION_STEPS))} save points over "
+            f"{len(PERIOD_DATA) * TRANSPORT_SUBSTEPS} MF6 transport steps."
+        )
+
+
+if __name__ == "__main__":
+    _example_support.configure_logging()
+    main()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -11,8 +11,8 @@ from mf6pqc.coupling.common import (
     enforce_component_domains,
     read_concentrations_from_modflow,
     run_reaction_step,
-    should_save_time_step,
     should_run_reaction,
+    should_save_time_step,
     solve_modflow_solutions,
     write_concentrations_to_modflow,
 )
@@ -158,9 +158,7 @@ class ConcentrationTransferTests(unittest.TestCase):
         backend = RecordingReactionBackend([5.0])
         sim = SimpleNamespace(phreeqc_rm=backend)
         with self.assertRaisesRegex(CouplingError, "start time"):
-            run_reaction_step(
-                sim, np.array([1.0]), np.empty(1), float("nan"), 0.25
-            )
+            run_reaction_step(sim, np.array([1.0]), np.empty(1), float("nan"), 0.25)
         self.assertEqual(backend.run_count, 0)
 
 
@@ -319,12 +317,8 @@ class SiaConvergenceTests(unittest.TestCase):
             coupling_difference=np.empty(4),
             mobile_water_volume=np.array([0.5, 2.0]),
             species_slices=(slice(0, 2), slice(2, 4)),
-            source_variables={
-                name: {"ptr": pointer} for name, pointer in pointers.items()
-            },
-            concentration_variables={
-                name: {"ptr": np.ones(2)} for name in pointers
-            },
+            source_variables={name: {"ptr": pointer} for name, pointer in pointers.items()},
+            concentration_variables={name: {"ptr": np.ones(2)} for name in pointers},
         )
 
         def evaluator(components, concentrations, target_time):
@@ -360,9 +354,7 @@ class SiaConvergenceTests(unittest.TestCase):
             water_only_sink_rates=np.zeros(2),
         )
         with self.assertRaisesRegex(CouplingError, "returned shape"):
-            update_sources_from_instantaneous_rates(
-                sim, state, target_time=1.0
-            )
+            update_sources_from_instantaneous_rates(sim, state, target_time=1.0)
 
     def test_transport_reaction_closure_is_required(self) -> None:
         state = self._state()

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import _example_support as _example_support
 import flopy
 import numpy as np
 
 from mf6pqc.utils import get_gwt_model_name
-
 
 NLAY = 1
 NROW = 1
@@ -63,9 +67,7 @@ def build_model(
     )
 
     flow_name = "gwf_model"
-    flow = flopy.mf6.ModflowGwf(
-        simulation, modelname=flow_name, save_flows=True
-    )
+    flow = flopy.mf6.ModflowGwf(simulation, modelname=flow_name, save_flows=True)
     _ims(simulation, flow.name, f"{flow_name}.ims")
     flopy.mf6.ModflowGwfdis(
         flow,
@@ -110,9 +112,7 @@ def build_model(
         flow,
         pname="CHD-FLOW",
         save_flows=True,
-        stress_period_data={
-            0: [[(0, 0, 0), 1.0], [(0, 0, NCOL - 1), 0.0]]
-        },
+        stress_period_data={0: [[(0, 0, 0), 1.0], [(0, 0, NCOL - 1), 0.0]]},
     )
     flopy.mf6.ModflowGwfoc(
         flow,
@@ -142,9 +142,7 @@ def build_model(
         )
         start = component_index * NXYZ
         stop = start + NXYZ
-        flopy.mf6.ModflowGwtic(
-            transport, strt=initial_concentrations[start:stop]
-        )
+        flopy.mf6.ModflowGwtic(transport, strt=initial_concentrations[start:stop])
         flopy.mf6.ModflowGwtadv(transport, scheme="TVD")
         flopy.mf6.ModflowGwtdsp(
             transport,
@@ -158,9 +156,7 @@ def build_model(
         flopy.mf6.ModflowGwtcnc(
             transport,
             pname="CNC-INFLOW",
-            stress_period_data={
-                0: [[(0, 0, 0), float(inflow_concentrations[component_index])]]
-            },
+            stress_period_data={0: [[(0, 0, 0), float(inflow_concentrations[component_index])]]},
         )
         flopy.mf6.ModflowGwtssm(transport)
         flopy.mf6.ModflowGwtoc(

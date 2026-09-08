@@ -22,9 +22,7 @@ def cache_porosity_pointers(modflow_api, components: list[str]) -> dict[str, np.
     """Return live GWT MST porosity arrays for every transported component."""
     pointers: dict[str, np.ndarray] = {}
     for component in components:
-        address = modflow_api.get_var_address(
-            "THETAM", get_gwt_model_name(component), "MST"
-        )
+        address = modflow_api.get_var_address("THETAM", get_gwt_model_name(component), "MST")
         pointers[component] = modflow_api.get_value_ptr(address)
     return pointers
 
@@ -67,13 +65,13 @@ def setup_porosity_and_conductivity(sim) -> np.ndarray | None:
     sim.nodekchange_addr = sim.modflow_api.get_var_address(
         "NODEKCHANGE", sim.flow_model_name, sim.npf_package_name
     )
-    sim.modflow_api.set_value(
-        sim.nodekchange_addr, np.ones(sim.nxyz, dtype=np.int32)
-    )
+    sim.modflow_api.set_value(sim.nodekchange_addr, np.ones(sim.nxyz, dtype=np.int32))
     sim.results_porosity = [sim.porosity.copy()]
     sim.results_K = [current_k11.copy()]
     if sim.if_update_density:
-        sim.k_update_density_prev = sim.selected_output[-1].copy()
+        from mf6pqc.coupling.common import get_calculated_density
+
+        sim.k_update_density_prev = get_calculated_density(sim) / 1000.0
         sim.k_update_viscosity_prev = sim.viscosity.copy()
     return current_k11
 
@@ -93,24 +91,17 @@ def setup_boundary_conductance_updates(sim) -> None:
             ) from exc
         if not -sim.nxyz <= cell_index < sim.nxyz:
             raise ConfigurationError(
-                f"Boundary cell_index for {package_name!r} is outside the model: "
-                f"{cell_index}"
+                f"Boundary cell_index for {package_name!r} is outside the model: {cell_index}"
             )
-        if distance <= 0.0 or area <= 0.0:
+        if not np.isfinite(distance) or not np.isfinite(area) or distance <= 0.0 or area <= 0.0:
             raise ConfigurationError(
                 f"Boundary distance and area for {package_name!r} must be positive"
             )
-        address = sim.modflow_api.get_var_address(
-            "COND", sim.flow_model_name, package_name
-        )
+        address = sim.modflow_api.get_var_address("COND", sim.flow_model_name, package_name)
         pointer = sim.modflow_api.get_value_ptr(address)
         if pointer.size != 1:
-            raise BackendError(
-                f"Expected one GHB bound for {package_name!r}, got {pointer.size}"
-            )
-        sim.boundary_conductance_ptrs.append(
-            (pointer, cell_index, distance, area)
-        )
+            raise BackendError(f"Expected one GHB bound for {package_name!r}, got {pointer.size}")
+        sim.boundary_conductance_ptrs.append((pointer, cell_index, distance, area))
 
 
 def update_boundary_conductances(sim, current_k11: np.ndarray) -> None:
@@ -124,9 +115,7 @@ def setup_diffusion_updates(sim) -> None:
     if not sim.if_update_diffc:
         return
     sim.diffc_tags = {
-        component: sim.modflow_api.get_var_address(
-            "DIFFC", get_gwt_model_name(component), "DSP"
-        )
+        component: sim.modflow_api.get_var_address("DIFFC", get_gwt_model_name(component), "DSP")
         for component in sim.components
     }
 
@@ -135,9 +124,7 @@ def setup_density_update(sim) -> None:
     """Cache the GWF BUY density array when density feedback is enabled."""
     if not sim.if_update_density:
         return
-    sim.density_addr = sim.modflow_api.get_var_address(
-        "DENSE", sim.flow_model_name, "BUY"
-    )
+    sim.density_addr = sim.modflow_api.get_var_address("DENSE", sim.flow_model_name, "BUY")
     sim.density_ptr = sim.modflow_api.get_value_ptr(sim.density_addr)
     if sim.density_ptr.size != sim.nxyz:
         raise BackendError(
@@ -202,9 +189,7 @@ def update_medium_properties(
             sim.mineral_volumes,
             old_porosity,
         )
-        new_porosity = np.where(
-            sim.porosity_update_mask, proposed_porosity, old_porosity
-        )
+        new_porosity = np.where(sim.porosity_update_mask, proposed_porosity, old_porosity)
         sim.porosity = new_porosity
         sim.phreeqc_rm.SetPorosity(new_porosity)
         for pointer in sim.thetam_ptrs.values():
@@ -215,7 +200,9 @@ def update_medium_properties(
             update_energy_porosity(sim, new_porosity)
 
         if sim.if_update_density:
-            density_new = sim.selected_output[-1].copy()
+            from mf6pqc.coupling.common import get_calculated_density
+
+            density_new = get_calculated_density(sim) / 1000.0
             viscosity_new = sim.viscosity.copy()
             current_k11 = sim._update_K(
                 current_k11,
@@ -229,12 +216,10 @@ def update_medium_properties(
             sim.k_update_density_prev = density_new
             sim.k_update_viscosity_prev = viscosity_new
         else:
-            current_k11 = sim._update_K(
-                current_k11, old_porosity, new_porosity
-            )
-        if not np.all(np.isfinite(current_k11)) or np.any(current_k11 < 0.0):
+            current_k11 = sim._update_K(current_k11, old_porosity, new_porosity)
+        if not np.all(np.isfinite(current_k11)) or np.any(current_k11 <= 0.0):
             raise PropertyUpdateError(
-                "Permeability updater returned non-finite or negative K values"
+                "Permeability updater returned non-finite or non-positive K values"
             )
         if should_save_time_step(sim, logical_step):
             sim.results_porosity.append(new_porosity.copy())
@@ -243,12 +228,10 @@ def update_medium_properties(
     if sim.if_update_diffc:
         new_diffc = update_diffc(sim.porosity, sim.d0)
         if not np.all(np.isfinite(new_diffc)) or np.any(new_diffc < 0.0):
-            raise PropertyUpdateError(
-                "Diffusion updater returned non-finite or negative values"
-            )
+            raise PropertyUpdateError("Diffusion updater returned non-finite or negative values")
         if should_save_time_step(sim, logical_step):
             sim.results_diffc.append(new_diffc.copy())
-        for component, address in sim.diffc_tags.items():
+        for _component, address in sim.diffc_tags.items():
             sim.modflow_api.set_value(address, new_diffc)
     return current_k11
 

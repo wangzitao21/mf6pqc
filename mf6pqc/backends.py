@@ -8,8 +8,12 @@ libraries.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import contextlib
+import logging
+import numbers
 import os
+from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -19,6 +23,41 @@ from mf6pqc.constants import (
     PHREEQCRM_UNITS,
 )
 from mf6pqc.exceptions import BackendError, ConfigurationError
+
+_logger = logging.getLogger(__name__)
+
+
+class CheckedPhreeqcRM:
+    """Turn negative PhreeqcRM status codes into Python exceptions.
+
+    PhreeqcRM's default error mode returns a status instead of raising. Getter
+    values (which can legitimately be negative) retain their native semantics.
+    Methods are cached so the transport loop adds no repeated wrapper creation.
+    The underlying solver remains accessible through ``backend``.
+    """
+
+    def __init__(self, backend: Any) -> None:
+        self.backend = backend
+
+    def __getattr__(self, name: str):
+        attribute = getattr(self.backend, name)
+        if not callable(attribute) or name.startswith("Get"):
+            return attribute
+
+        backend = self.backend
+
+        @wraps(attribute)
+        def checked(*args, **kwargs):
+            result = attribute(*args, **kwargs)
+            if isinstance(result, numbers.Integral) and result < 0:
+                detail = ""
+                with contextlib.suppress(AttributeError, RuntimeError):
+                    detail = str(backend.GetErrorString()).strip()
+                raise BackendError(f"PhreeqcRM {name} failed (status {result}): {detail}")
+            return result
+
+        setattr(self, name, checked)
+        return checked
 
 
 @runtime_checkable
@@ -55,6 +94,16 @@ class NativeBackendFactory:
         return modflowapi.extensions.ApiSimulation.load(modflow_api)
 
 
+def file_fingerprint(path: str | Path) -> dict[str, str | int]:
+    """Identify the exact solver input without embedding its contents in output."""
+    import hashlib
+
+    resolved = Path(path).resolve()
+    with resolved.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    return {"path": str(resolved), "sha256": digest, "size_bytes": resolved.stat().st_size}
+
+
 def _require_file(path: str | os.PathLike[str] | None, label: str) -> str:
     if path is None:
         raise ConfigurationError(f"{label} must be provided")
@@ -75,7 +124,7 @@ def _require_directory(path: str | os.PathLike[str] | None, label: str) -> str:
 
 def initialize_phreeqcrm(sim) -> None:
     """Create and fully configure the chemistry backend for ``sim``."""
-    print("--- Initializing PhreeqcRM ---")
+    _logger.info("--- Initializing PhreeqcRM ---")
     database = _require_file(sim.db_path, "db_path")
     chemistry_input = _require_file(sim.pqi_path, "pqi_path")
     if sim.output_dir is None:
@@ -84,10 +133,14 @@ def initialize_phreeqcrm(sim) -> None:
     os.makedirs(output_dir, exist_ok=True)
     sim.output_dir = output_dir
 
+    sim.input_provenance = {
+        "database": file_fingerprint(database),
+        "chemistry_input": file_fingerprint(chemistry_input),
+    }
     chemistry = None
     files_open = False
     try:
-        chemistry = sim.backend_factory.create_phreeqcrm(sim.nxyz, sim.nthreads)
+        chemistry = CheckedPhreeqcRM(sim.backend_factory.create_phreeqcrm(sim.nxyz, sim.nthreads))
         sim.phreeqc_rm = chemistry
         prefix = os.path.join(output_dir, f"{sim.case_name}_prm")
         chemistry.SetFilePrefix(prefix)
@@ -105,13 +158,15 @@ def initialize_phreeqcrm(sim) -> None:
         chemistry.SetPressure(sim.pressure)
         chemistry.SetPorosity(sim.porosity)
         chemistry.SetSaturation(sim.saturation)
+        chemistry.SetDensityUser(sim.density)
+        chemistry.SetPrintChemistryMask(sim.print_chemistry_mask.astype("int32"))
         chemistry.SetComponentH2O(sim.componentH2O)
         chemistry.UseSolutionDensityVolume(sim.solution_density_volume)
         chemistry.SetRebalanceFraction(PHREEQCRM_REBALANCE_FRACTION)
-        print(f"Loading Phreeqc database: {database}")
+        _logger.info(f"Loading Phreeqc database: {database}")
         chemistry.LoadDatabase(database)
         chemistry.SetPrintChemistryOn(True, False, False)
-        print(f"Running chemistry definition file: {chemistry_input}")
+        _logger.info(f"Running chemistry definition file: {chemistry_input}")
         chemistry.RunFile(True, True, True, chemistry_input)
         chemistry.RunString(True, False, True, "DELETE; -all")
         sim.ncomps = chemistry.FindComponents()
@@ -123,33 +178,66 @@ def initialize_phreeqcrm(sim) -> None:
             )
         if not sim.components:
             raise BackendError("PhreeqcRM did not report any transport components")
-        print(f"List of reactive chemical components: {sim.components}")
+        _logger.info(f"List of reactive chemical components: {sim.components}")
         chemistry.SetScreenOn(False)
         chemistry.SetSelectedOutputOn(True)
-    except Exception as exc:
+    except BaseException as exc:
         if chemistry is not None:
             if files_open:
-                try:
+                with contextlib.suppress(Exception):
                     chemistry.CloseFiles()
-                except Exception:
-                    pass
-            try:
+            with contextlib.suppress(Exception):
                 chemistry.MpiWorkerBreak()
-            except Exception:
-                pass
         sim.phreeqc_rm = None
-        if isinstance(exc, (ConfigurationError, BackendError)):
+        if not isinstance(exc, Exception) or isinstance(exc, (ConfigurationError, BackendError)):
             raise
         raise BackendError(f"Failed to initialize PhreeqcRM: {exc}") from exc
 
 
+def validate_modflow_workspace(workspace: str | Path) -> None:
+    """Reject unsupported time units and adaptive stepping before native initialization."""
+    import shlex
+
+    def records(path):
+        for line in Path(path).read_text(encoding="utf-8-sig").splitlines():
+            lexer = shlex.shlex(line, posix=True)
+            lexer.whitespace_split = True
+            lexer.escape = ""  # Preserve Windows paths inside MODFLOW input.
+            tokens = list(lexer)
+            if tokens:
+                yield tokens
+
+    workspace = Path(workspace)
+    namefile = workspace / "mfsim.nam"
+    if not namefile.is_file():
+        raise ConfigurationError(f"MODFLOW simulation name file is missing: {namefile}")
+    tdis_files = [row[1] for row in records(namefile) if row[0].upper() == "TDIS6" and len(row) > 1]
+    if len(tdis_files) != 1:
+        raise ConfigurationError("mfsim.nam must define exactly one TDIS6 file")
+    tdis = workspace / tdis_files[0]
+    if not tdis.is_file():
+        raise ConfigurationError(f"TDIS file is missing: {tdis}")
+    units = None
+    for row in records(tdis):
+        if row[0].upper() == "ATS6":
+            raise ConfigurationError("ATS is not supported; use a static TDIS schedule")
+        if row[0].upper() == "TIME_UNITS" and len(row) > 1:
+            units = row[1].upper()
+    if units != "DAYS":
+        raise ConfigurationError(
+            "MF6PQC currently requires TDIS TIME_UNITS DAYS; chemistry time is converted to seconds"
+        )
+
+
 def initialize_modflow6(sim) -> None:
     """Create and initialize the MODFLOW 6 backend for ``sim``."""
-    print("--- Initializing MODFLOW 6 ---")
+    _logger.info("--- Initializing MODFLOW 6 ---")
     dll_path = _require_file(sim.modflow_dll_path, "modflow_dll_path")
     workspace = _require_directory(sim.workspace, "workspace")
+    validate_modflow_workspace(workspace)
+    sim.input_provenance["modflow_library"] = file_fingerprint(dll_path)
     sim.workspace = workspace
-    print(f"Working directory: {workspace}")
+    _logger.info(f"Working directory: {workspace}")
     api = None
     initialized = False
     try:
@@ -158,13 +246,13 @@ def initialize_modflow6(sim) -> None:
         initialized = True
         sim.modflow_api = api
         sim.sim = sim.backend_factory.load_modflow_simulation(api)
-    except Exception as exc:
+    except BaseException as exc:
         if api is not None and initialized:
-            try:
+            with contextlib.suppress(Exception):
                 api.finalize()
-            except Exception:
-                pass
         sim.modflow_api = None
+        if not isinstance(exc, Exception):
+            raise
         raise BackendError(
             "Failed to initialize MODFLOW 6. "
             f"DLL: {dll_path}; workspace: {workspace}; reason: {exc}"

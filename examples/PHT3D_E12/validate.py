@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import _example_support as _example_support
+import numpy as np
+from _example_support import runtime_path
 
 CASE_DIR = Path(__file__).resolve().parent
 REFERENCE_FILE = CASE_DIR / "input_data" / "official_reference.npz"
@@ -29,19 +33,19 @@ def profile_metrics(
 
 
 def main() -> None:
-    results = np.load(CASE_DIR / "output" / "results.npy")
-    result_times = np.load(CASE_DIR / "output" / "results_times.npy")
-    headings = (CASE_DIR / "output" / "results_headings.txt").read_text(
-        encoding="utf-8"
-    ).splitlines()
+    results = np.load(runtime_path(__file__, "output") / "results.npy")
+    result_times = np.load(runtime_path(__file__, "output") / "results_times.npy")
+    headings = (
+        (runtime_path(__file__, "output") / "results_headings.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
     with np.load(REFERENCE_FILE) as source:
         official = {name: source[name].copy() for name in source.files}
 
     expected_shape = (4, len(headings), official["x"].size)
     if results.shape != expected_shape:
-        raise AssertionError(
-            f"Unexpected result shape {results.shape}; expected {expected_shape}"
-        )
+        raise AssertionError(f"Unexpected result shape {results.shape}; expected {expected_shape}")
     if not np.all(np.isfinite(results)):
         raise AssertionError("MF6PQC results contain non-finite values")
     np.testing.assert_allclose(
@@ -70,15 +74,12 @@ def main() -> None:
 
     print("Official PHT3D comparison (focus: 0.1-0.175 m)")
     print(
-        f"{'field':<6} {'hour':>9} {'NRMSE':>10} {'corr':>10} "
-        f"{'focus RMSE':>13} {'focus max':>12}"
+        f"{'field':<6} {'hour':>9} {'NRMSE':>10} {'corr':>10} {'focus RMSE':>13} {'focus max':>12}"
     )
     for field, field_limits in limits.items():
         row = headings.index(field)
         for index, hour in enumerate(official["actual_hours"]):
-            metrics = profile_metrics(
-                results[index + 1, row], official[field][index], focus
-            )
+            metrics = profile_metrics(results[index + 1, row], official[field][index], focus)
             nrmse, correlation, focus_rmse, focus_max = metrics
             print(
                 f"{field:<6} {hour:9.5f} {nrmse:10.5f} {correlation:10.5f} "
@@ -87,25 +88,17 @@ def main() -> None:
             if nrmse > field_limits["nrmse"]:
                 raise AssertionError(f"{field} NRMSE exceeds its regression limit")
             if correlation < field_limits["correlation"]:
-                raise AssertionError(
-                    f"{field} correlation is below its regression limit"
-                )
+                raise AssertionError(f"{field} correlation is below its regression limit")
             if focus_rmse > field_limits["focus_rmse"]:
-                raise AssertionError(
-                    f"{field} focused RMSE exceeds its regression limit"
-                )
+                raise AssertionError(f"{field} focused RMSE exceeds its regression limit")
             if focus_max > field_limits["focus_max"]:
-                raise AssertionError(
-                    f"{field} focused maximum error exceeds its regression limit"
-                )
+                raise AssertionError(f"{field} focused maximum error exceeds its regression limit")
 
     tracer_row = headings.index("Tracer")
     for index in range(2):
         tracer = results[index + 1, tracer_row]
         reference = official["Tracer"][index]
-        tracer_nrmse = float(
-            np.sqrt(np.mean((tracer - reference) ** 2)) / np.ptp(reference)
-        )
+        tracer_nrmse = float(np.sqrt(np.mean((tracer - reference) ** 2)) / np.ptp(reference))
         if tracer_nrmse > 0.020:
             raise AssertionError("Tracer NRMSE exceeds its regression limit")
     final_tracer = float(np.max(np.abs(results[3, tracer_row])))
@@ -117,4 +110,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     main()

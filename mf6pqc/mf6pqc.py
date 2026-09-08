@@ -1,5 +1,7 @@
-import numpy as np
+import logging
 import warnings
+
+import numpy as np
 
 from mf6pqc.backends import (
     BackendFactory,
@@ -7,37 +9,42 @@ from mf6pqc.backends import (
     initialize_modflow6,
     initialize_phreeqcrm,
 )
-from mf6pqc.types import ArrayLike, SIARateEvaluator
-from mf6pqc.constants import VM_MINERALS, SECONDS_PER_DAY
-from mf6pqc.utils import ensure_array, get_species_slice
-from mf6pqc.input_processing import (
-    create_ic_array_from_map,
-    setup_single_ic,
-    setup_mixed_ic,
-)
-from mf6pqc.output_processing import (
-    extract_output_information,
-    update_porosity,
-    update_diffc,
-    save_results,
-)
+from mf6pqc.config import SimulationConfig
+from mf6pqc.constants import SECONDS_PER_DAY, VM_MINERALS
 from mf6pqc.coupling import (
     CouplingMethod,
     get_coupling_runner,
-    run_standard,
     run_sia,
+    run_standard,
     run_strang,
     run_thermal_snia,
+)
+from mf6pqc.exceptions import ConfigurationError, CouplingError
+from mf6pqc.input_processing import (
+    create_ic_array_from_map,
+    setup_mixed_ic,
+    setup_single_ic,
+)
+from mf6pqc.output_processing import (
+    environment_metadata,
+    extract_output_information,
+    save_results,
+    update_diffc,
+    update_porosity,
 )
 from mf6pqc.permeability import (
     BasePermeabilityUpdater,
     FluidAdjustedKozenyCarmanUpdater,
     KozenyCarmanUpdater,
-    DensityCoupledKozenyCarmanUpdater,
-    PowerLawUpdater,
 )
-from mf6pqc.exceptions import ConfigurationError, CouplingError
-from mf6pqc.config import SimulationConfig
+from mf6pqc.permeability import (
+    DensityCoupledKozenyCarmanUpdater as DensityCoupledKozenyCarmanUpdater,
+)
+from mf6pqc.permeability import PowerLawUpdater as PowerLawUpdater
+from mf6pqc.types import ArrayLike, SIARateEvaluator
+from mf6pqc.utils import ensure_array, get_species_slice, require_integer, step_numbers
+
+_logger = logging.getLogger(__name__)
 
 VM_minerals = VM_MINERALS
 
@@ -191,9 +198,7 @@ class mf6pqc:
         if permeability_updater is not None and not isinstance(
             permeability_updater, BasePermeabilityUpdater
         ):
-            raise TypeError(
-                "permeability_updater must implement BasePermeabilityUpdater"
-            )
+            raise TypeError("permeability_updater must implement BasePermeabilityUpdater")
         if permeability_updater is not None:
             self.perm_updater = permeability_updater
         else:
@@ -203,22 +208,16 @@ class mf6pqc:
         self.k_update_density_prev = self.density.copy()
         self.k_update_viscosity_prev = self.viscosity.copy()
 
-    def _set_component_domains(
-        self, signed_components: tuple[str, ...] | list[str]
-    ) -> None:
+    def _set_component_domains(self, signed_components: tuple[str, ...] | list[str]) -> None:
         """Store components whose valid concentration domain includes negatives."""
         if isinstance(signed_components, (str, bytes)):
             raise TypeError("signed_components must be a sequence of component names")
         try:
             names = tuple(signed_components)
         except TypeError as exc:
-            raise TypeError(
-                "signed_components must be a sequence of component names"
-            ) from exc
+            raise TypeError("signed_components must be a sequence of component names") from exc
         if any(not isinstance(name, str) or not name.strip() for name in names):
-            raise ValueError(
-                "signed_components must contain only non-empty component names"
-            )
+            raise ValueError("signed_components must contain only non-empty component names")
         self.signed_components = frozenset(name.strip().casefold() for name in names)
 
     @classmethod
@@ -239,10 +238,11 @@ class mf6pqc:
         rate_evaluator: SIARateEvaluator | None,
     ) -> None:
         """Validate and store controls for the sequential iterative method."""
-        if max_iterations <= 0:
-            raise ValueError("sia_max_iterations must be a positive integer")
-        if rtol < 0.0 or atol < 0.0:
-            raise ValueError("SIA convergence tolerances must be nonnegative")
+        max_iterations = require_integer("sia_max_iterations", max_iterations)
+        if not np.isfinite(rtol) or not np.isfinite(atol) or rtol < 0.0 or atol < 0.0:
+            raise ConfigurationError("SIA convergence tolerances must be finite and nonnegative")
+        if rtol == 0.0 and atol == 0.0:
+            raise ConfigurationError("At least one SIA convergence tolerance must be positive")
         if not 0.0 < source_relaxation <= 1.0:
             raise ValueError("sia_source_relaxation must be in (0, 1]")
         if not 0.0 < density_relaxation <= 1.0:
@@ -287,19 +287,17 @@ class mf6pqc:
         """
         if not isinstance(case_name, str) or not case_name.strip():
             raise ConfigurationError("case_name must be a non-empty string")
-        if isinstance(nxyz, bool) or int(nxyz) != nxyz or int(nxyz) <= 0:
-            raise ConfigurationError("nxyz must be a positive integer")
-        if isinstance(nthreads, bool) or int(nthreads) != nthreads or int(nthreads) <= 0:
-            raise ConfigurationError("nthreads must be a positive integer")
-        if isinstance(save_interval, bool) or int(save_interval) != save_interval:
-            raise ConfigurationError("save_interval must be an integer")
-        if int(save_interval) <= 0:
-            raise ConfigurationError("save_interval must be positive")
-        if (
-            isinstance(save_interval_offset, bool)
-            or int(save_interval_offset) != save_interval_offset
-        ):
-            raise ConfigurationError("save_interval_offset must be an integer")
+        if any(character in case_name for character in "/\\:\0") or case_name.strip() in {
+            ".",
+            "..",
+        }:
+            raise ConfigurationError("case_name must be a filename label, without path separators")
+        nxyz = require_integer("nxyz", nxyz)
+        nthreads = require_integer("nthreads", nthreads)
+        save_interval = require_integer("save_interval", save_interval)
+        save_interval_offset = require_integer(
+            "save_interval_offset", save_interval_offset, minimum=0
+        )
         self.case_name = case_name.strip()
         self.nxyz = int(nxyz)
         self.nthreads = int(nthreads)
@@ -312,33 +310,9 @@ class mf6pqc:
         self.workspace = workspace
         self.save_interval = int(save_interval)
         self.save_interval_offset = int(save_interval_offset)
-        if save_steps is None:
-            self.save_steps = None
-        else:
-            normalised_steps = frozenset(int(step) for step in save_steps)
-            if any(step <= 0 for step in normalised_steps):
-                raise ValueError("save_steps must contain positive, one-based step numbers")
-            self.save_steps = normalised_steps
-        if reaction_steps is None:
-            self.reaction_steps = None
-        else:
-            normalised_reaction_steps = frozenset(
-                int(step) for step in reaction_steps
-            )
-            if not normalised_reaction_steps or any(
-                step <= 0 for step in normalised_reaction_steps
-            ):
-                raise ValueError(
-                    "reaction_steps must contain positive, one-based step numbers"
-                )
-            self.reaction_steps = normalised_reaction_steps
-        if (
-            isinstance(progress_interval, bool)
-            or int(progress_interval) != progress_interval
-            or int(progress_interval) <= 0
-        ):
-            raise ValueError("progress_interval must be a positive integer")
-        self.progress_interval = int(progress_interval)
+        self.save_steps = step_numbers("save_steps", save_steps)
+        self.reaction_steps = step_numbers("reaction_steps", reaction_steps)
+        self.progress_interval = require_integer("progress_interval", progress_interval)
 
     def _set_runtime_flags(
         self, if_update_porosity_K: bool, if_update_density: bool, if_update_diffc: bool
@@ -391,23 +365,20 @@ class mf6pqc:
             if not isinstance(value, str) or not value.strip():
                 raise ConfigurationError(f"{label} must be a non-empty string")
             setattr(self, label, value.strip())
-        if (
-            not np.isfinite(initial_field_tolerance)
-            or initial_field_tolerance < 0.0
-        ):
-            raise ConfigurationError(
-                "initial_gwe_field_tolerance must be finite and nonnegative"
-            )
+        if not np.isfinite(initial_field_tolerance) or initial_field_tolerance < 0.0:
+            raise ConfigurationError("initial_gwe_field_tolerance must be finite and nonnegative")
         self.sync_gwe_temperature_to_phreeqc = bool(sync_temperature)
         self.validate_initial_gwe_fields = bool(validate_initial_fields)
         self.initial_gwe_field_tolerance = float(initial_field_tolerance)
 
     def _validate_feature_combinations(self) -> None:
         """Reject ownership conflicts before either native solver is run."""
+        if self.boundary_conductance_updates and not self.if_update_porosity_K:
+            raise ConfigurationError(
+                "boundary_conductance_updates requires if_update_porosity_K=True"
+            )
         if self.sia_rate_evaluator is not None and (
-            self.if_update_porosity_K
-            or self.if_update_density
-            or self.if_update_diffc
+            self.if_update_porosity_K or self.if_update_density or self.if_update_diffc
         ):
             raise ConfigurationError(
                 "sia_rate_evaluator is a stateless aqueous-rate interface and "
@@ -420,9 +391,7 @@ class mf6pqc:
                 "MODFLOW VSC must remain the sole owner of viscosity-adjusted "
                 "boundary and aquifer conductance."
             )
-        if self.vsc_enabled and isinstance(
-            self.perm_updater, FluidAdjustedKozenyCarmanUpdater
-        ):
+        if self.vsc_enabled and isinstance(self.perm_updater, FluidAdjustedKozenyCarmanUpdater):
             raise ConfigurationError(
                 "FluidAdjustedKozenyCarmanUpdater cannot be combined with VSC; "
                 "that would apply viscosity to hydraulic conductivity twice"
@@ -501,12 +470,13 @@ class mf6pqc:
         self.saturation = self._ensure_array("saturation", saturation)
         self.density = self._ensure_array("density", density)
         self.viscosity = self._ensure_array("viscosity", viscosity)
-        self.porosity_update_mask = self._ensure_array(
-            "porosity_update_mask", porosity_update_mask
-        ).astype(bool)
-        self.print_chemistry_mask = self._ensure_array(
-            "print_chemistry_mask", print_chemistry_mask
-        )
+        mask = self._ensure_array("porosity_update_mask", porosity_update_mask)
+        if not np.all(np.isin(mask, [0, 1])):
+            raise ConfigurationError("porosity_update_mask must contain only 0 or 1")
+        self.porosity_update_mask = mask.astype(bool)
+        self.print_chemistry_mask = self._ensure_array("print_chemistry_mask", print_chemistry_mask)
+        if not np.all(np.isin(self.print_chemistry_mask, [0, 1])):
+            raise ConfigurationError("print_chemistry_mask must contain only 0 or 1")
         if water_only_sink_rates is None:
             self.water_only_sink_rates = np.zeros(self.nxyz, dtype=float)
         else:
@@ -654,12 +624,13 @@ class mf6pqc:
         ic_map2 : dict | None
             Optional mapping for mixed initial conditions.
         fractions : ArrayLike | None
-            Optional mixing fraction for ic_map2.
+            Cell-wise fraction of ic_map (the first end member).
         Returns
         -------
         np.ndarray
             Initial concentrations after equilibrium.
         """
+        self._ensure_open()
         if self.is_setup:
             warnings.warn(
                 "setup() has already completed; returning the cached initial concentrations",
@@ -676,13 +647,11 @@ class mf6pqc:
                 raise ConfigurationError(
                     "ic_map2 and fractions must be provided together for mixed mode"
                 )
-            print("--- Running initial chemical equilibrium calculation ---")
+            _logger.info("--- Running initial chemical equilibrium calculation ---")
             self.phreeqc_rm.SetTime(0.0 * SECONDS_PER_DAY)
             self.phreeqc_rm.SetTimeStep(0.0 * SECONDS_PER_DAY)
             self.phreeqc_rm.RunCells()
-            initial = np.asarray(
-                self.phreeqc_rm.GetConcentrations(), dtype=float
-            ).ravel()
+            initial = np.asarray(self.phreeqc_rm.GetConcentrations(), dtype=float).ravel()
             expected = self.nxyz * self.ncomps
             if initial.size != expected or not np.all(np.isfinite(initial)):
                 raise CouplingError(
@@ -694,9 +663,7 @@ class mf6pqc:
                 raise CouplingError(
                     "PhreeqcRM selected output has no headings; define SELECTED_OUTPUT/USER_PUNCH"
                 )
-            raw_selected = np.asarray(
-                self.phreeqc_rm.GetSelectedOutput(), dtype=float
-            )
+            raw_selected = np.asarray(self.phreeqc_rm.GetSelectedOutput(), dtype=float)
             if raw_selected.size != len(self.headings) * self.nxyz:
                 raise CouplingError(
                     "Selected output size does not match headings and nxyz: "
@@ -706,22 +673,18 @@ class mf6pqc:
             if not np.all(np.isfinite(self.selected_output)):
                 raise CouplingError("Initial selected output contains non-finite values")
             if self.if_update_density:
-                if self.use_phreeqc_calculated_density:
-                    density = np.asarray(
-                        self.phreeqc_rm.GetDensityCalculated(), dtype=float
-                    ).ravel()
-                    if density.size != self.nxyz or np.any(density <= 0.0):
-                        raise CouplingError(
-                            "PhreeqcRM calculated density is invalid or has the wrong size"
-                        )
-                    self.selected_output[-1] = density
-                elif self.headings[-1].casefold() != self.density_output_heading.casefold():
+                from mf6pqc.coupling.common import get_calculated_density
+
+                if (
+                    not self.use_phreeqc_calculated_density
+                    and self.headings[-1].casefold() != self.density_output_heading.casefold()
+                ):
                     raise ConfigurationError(
                         "Density feedback reads the final selected-output row. "
-                        f"Expected heading {self.density_output_heading!r}, got "
-                        f"{self.headings[-1]!r}. Set use_phreeqc_calculated_density=True "
-                        "or provide the correct density_output_heading."
+                        f"Expected heading {self.density_output_heading!r}, got {self.headings[-1]!r}. "
+                        "Set use_phreeqc_calculated_density=True or provide the correct density_output_heading."
                     )
+                get_calculated_density(self)
             if self.if_update_porosity_K:
                 self._get_output_information()
                 if self.output_indices.size == 0:
@@ -734,8 +697,8 @@ class mf6pqc:
             self.result_times.append(0.0)
             self.is_setup = True
             return initial
-        except Exception:
-            self.is_setup = False
+        except BaseException:
+            self.finalize()
             raise
 
     def _get_output_information(self) -> None:
@@ -838,7 +801,7 @@ class mf6pqc:
 
     def run(self, method: CouplingMethod | str | None = None) -> None:
         """
-        Run the standard reactive transport simulation loop.
+        Advance a configured SNIA, SIA, Strang, or ThermalSNIA simulation.
         Parameters
         ----------
         None
@@ -880,10 +843,9 @@ class mf6pqc:
         """Run explicit GWF-GWT-GWE-VSC reactive transport."""
         self._run_coupling(run_thermal_snia, CouplingMethod.THERMAL_SNIA)
 
-    def _run_coupling(
-        self, runner, method: CouplingMethod | str | None = None
-    ) -> None:
+    def _run_coupling(self, runner, method: CouplingMethod | str | None = None) -> None:
         """Apply lifecycle guards around a coupling algorithm."""
+        self._ensure_open()
         if self._run_active:
             raise CouplingError("A coupling run is already active")
         if self._run_completed:
@@ -891,10 +853,7 @@ class mf6pqc:
                 "This simulator has already completed a run; create a new instance "
                 "for another simulation"
             )
-        if (
-            self.reaction_steps is not None
-            and method is not CouplingMethod.SNIA
-        ):
+        if self.reaction_steps is not None and method is not CouplingMethod.SNIA:
             raise ConfigurationError(
                 "reaction_steps is currently implemented only for SNIA; "
                 f"received coupling method {method!r}"
@@ -906,9 +865,7 @@ class mf6pqc:
                 "SNIA/SIA/Strang paths intentionally remain unchanged"
             )
         if is_thermal and not self.energy_enabled:
-            raise ConfigurationError(
-                "ThermalSNIA requires energy_enabled=True"
-            )
+            raise ConfigurationError("ThermalSNIA requires energy_enabled=True")
         self._run_active = True
         if isinstance(method, CouplingMethod):
             self.last_coupling_method = method.value
@@ -918,7 +875,8 @@ class mf6pqc:
             self.last_coupling_method = runner.__name__
         try:
             runner(self)
-        except Exception:
+        except BaseException:
+            self.finalize()
             raise
         else:
             self._run_completed = True
@@ -952,6 +910,12 @@ class mf6pqc:
             filename,
             result_times=self.result_times,
             metadata={
+                "completed": self._run_completed,
+                "nxyz": self.nxyz,
+                "nthreads": self.nthreads,
+                "components": self.components,
+                "environment": environment_metadata(),
+                "inputs": self.input_provenance,
                 "coupling_method": self.last_coupling_method,
                 "logical_steps": self.final_time_step_index,
                 "wall_time_seconds": self.last_run_wall_time_seconds,
@@ -977,13 +941,13 @@ class mf6pqc:
         """
         if self._modflow_finalized and self._chemistry_finalized:
             return
-        print("--- Finalizing simulation, releasing resources ---")
+        _logger.info("--- Finalizing simulation, releasing resources ---")
         if self.modflow_api is None:
             self._modflow_finalized = True
         elif not self._modflow_finalized:
             try:
                 self.modflow_api.finalize()
-                print("MODFLOW API closed")
+                _logger.info("MODFLOW API closed")
             except Exception as exc:
                 warnings.warn(
                     f"MODFLOW API finalization failed: {exc}",
@@ -995,19 +959,27 @@ class mf6pqc:
         if self.phreeqc_rm is None:
             self._chemistry_finalized = True
         elif not self._chemistry_finalized:
-            try:
-                self.phreeqc_rm.CloseFiles()
-                self.phreeqc_rm.MpiWorkerBreak()
-                print("PhreeqcRM files closed.")
-            except Exception as exc:
-                warnings.warn(
-                    f"PhreeqcRM finalization failed: {exc}",
-                    ResourceWarning,
-                    stacklevel=2,
-                )
-            finally:
-                self._chemistry_finalized = True
+            for operation in ("CloseFiles", "MpiWorkerBreak"):
+                try:
+                    getattr(self.phreeqc_rm, operation)()
+                except Exception as exc:
+                    warnings.warn(
+                        f"PhreeqcRM {operation} failed: {exc}",
+                        ResourceWarning,
+                        stacklevel=2,
+                    )
+            self._chemistry_finalized = True
+        self.phreeqc_rm = None
+        self.modflow_api = None
+        self.sim = None
         self.is_setup = False
+
+    def _ensure_open(self) -> None:
+        """Reject reuse of closed native solver state."""
+        if getattr(self, "_chemistry_finalized", False) or getattr(
+            self, "_modflow_finalized", False
+        ):
+            raise CouplingError("This simulator is finalized; create a new instance")
 
     def __enter__(self):
         """Return this simulator for use as a context manager."""
@@ -1030,7 +1002,7 @@ class mf6pqc:
         list
             List of component names.
         """
-        return list(self.phreeqc_rm.GetComponents())
+        return list(self.components)
 
     def get_initial_concentrations(self, number: float) -> np.ndarray:
         """
@@ -1044,7 +1016,9 @@ class mf6pqc:
         np.ndarray
             Boundary concentration vector.
         """
-        bc1 = np.full((1), number)
+        self._ensure_open()
+        number = require_integer("solution number", number, minimum=0)
+        bc1 = np.full(1, number, dtype=np.int32)
         return self.phreeqc_rm.InitialPhreeqc2Concentrations(bc1)
 
 

@@ -79,9 +79,7 @@ class InitialConditionTests(unittest.TestCase):
             [0.25, 0.75],
         )
         self.assertIsNotNone(chemistry.mixed)
-        np.testing.assert_array_equal(
-            chemistry.mixed[2], np.tile([0.25, 0.75], 7)
-        )
+        np.testing.assert_array_equal(chemistry.mixed[2], np.tile([0.25, 0.75], 7))
 
 
 class FeedbackTests(unittest.TestCase):
@@ -138,12 +136,9 @@ class FeedbackTests(unittest.TestCase):
         np.testing.assert_allclose(actual, [1.76])
 
     def test_power_law_exponent_is_configurable(self) -> None:
-        actual = PowerLawUpdater(n=3.0).update(
-            np.array([2.0]), np.array([0.2]), np.array([0.4])
-        )
+        actual = PowerLawUpdater(n=3.0).update(np.array([2.0]), np.array([0.2]), np.array([0.4]))
         np.testing.assert_allclose(actual, [16.0])
 
 
 if __name__ == "__main__":
     unittest.main()
-

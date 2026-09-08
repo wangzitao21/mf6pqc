@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-import flopy
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import _example_support as _example_support
+import flopy
 
 NLAY = 1
 NROW = 1
@@ -106,9 +109,7 @@ def transport_model(
         pname="INJECTION",
         save_flows=True,
         auxiliary=species_list,
-        stress_period_data={
-            0: [[(0, 0, 0), WELL_RATE, *inflow_concentrations]]
-        },
+        stress_period_data={0: [[(0, 0, 0), WELL_RATE, *inflow_concentrations]]},
     )
     flopy.mf6.ModflowGwfchd(
         gwf,

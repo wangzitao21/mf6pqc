@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import json
-import os
 import sys
 from pathlib import Path
 
-import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import json
+import os
 
+import _example_support as _example_support
+import numpy as np
+from _example_support import executable_path, library_path, runtime_path
 
 CASE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CASE_DIR.parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
-from mf6pqc.mf6pqc import mf6pqc
 from modflow_model import (
-    DAYS_PER_YEAR,
     build_reference_grid,
     build_time_config,
     build_transport_model,
@@ -25,17 +24,19 @@ from modflow_model import (
     water_only_sink_rates,
 )
 
+from mf6pqc import MF6PQC
+
 
 def main() -> None:
     grid = build_reference_grid()
     time_config = build_time_config()
-    workspace = CASE_DIR / "simulation"
-    output_dir = CASE_DIR / "output"
+    workspace = runtime_path(__file__, "simulation")
+    output_dir = runtime_path(__file__, "output")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     equilibrium_phases = np.full(grid.nxyz, 2, dtype=np.int32)
     equilibrium_phases[: grid.ncol] = 1
-    simulator = mf6pqc(
+    simulator = MF6PQC(
         case_name="hamann2015",
         nxyz=grid.nxyz,
         nthreads=max(1, min(12, os.cpu_count() or 1)),
@@ -44,7 +45,7 @@ def main() -> None:
         porosity=0.25,
         saturation=1.0,
         density=0.99987,
-        print_chemistry_mask=1,
+        print_chemistry_mask=0,
         water_only_sink_rates=water_only_sink_rates(grid),
         # Hamann's evaporation boundary removes water while retaining salts.
         # H2O must therefore be transported explicitly.
@@ -54,7 +55,7 @@ def main() -> None:
         solution_density_volume=False,
         db_path=str(CASE_DIR / "input_data" / "pitzer.dat"),
         pqi_path=str(CASE_DIR / "input_data" / "input.pqi"),
-        modflow_dll_path=str(REPO_ROOT / "bin" / "mf6.7.0" / "libmf6.dll"),
+        modflow_dll_path=library_path("mf6.7.0"),
         workspace=str(workspace),
         output_dir=str(output_dir),
         if_update_porosity_K=False,
@@ -78,7 +79,7 @@ def main() -> None:
         components = simulator.get_components()
         build_transport_model(
             workspace=workspace,
-            mf6_executable=REPO_ROOT / "bin" / "mf6.7.0" / "mf6.exe",
+            mf6_executable=executable_path("mf6.7.0"),
             grid=grid,
             time_config=time_config,
             species=components,
@@ -131,4 +132,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     main()

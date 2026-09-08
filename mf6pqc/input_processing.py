@@ -2,47 +2,43 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import logging
 import numbers
 import warnings
+from collections.abc import Mapping
 
 import numpy as np
 
 from mf6pqc.constants import IC_DEFAULT, MODULE_INDICES
 from mf6pqc.types import ArrayLike
-from mf6pqc.utils import ensure_array
+from mf6pqc.utils import ensure_array, require_integer
+
+_logger = logging.getLogger(__name__)
 
 
 def _condition_indices(nxyz: int, module_name: str, value) -> np.ndarray:
-    if isinstance(value, numbers.Integral) and not isinstance(value, bool):
-        indices = np.full(nxyz, int(value), dtype=np.int32)
-    elif isinstance(value, numbers.Real) and float(value).is_integer():
-        indices = np.full(nxyz, int(value), dtype=np.int32)
+    if isinstance(value, (bool, np.bool_)):
+        raise TypeError(f"Initial condition for {module_name!r} must not be boolean")
+    if isinstance(value, numbers.Real):
+        raw = np.full(nxyz, value)
     elif isinstance(value, (list, tuple, np.ndarray)):
         raw = np.asarray(value)
-        if raw.size != nxyz:
-            raise ValueError(
-                f"Initial-condition array for {module_name!r} has {raw.size} "
-                f"values; expected {nxyz}"
-            )
-        numeric = np.asarray(raw, dtype=float).ravel()
-        if not np.all(np.isfinite(numeric)) or not np.all(numeric == np.floor(numeric)):
-            raise ValueError(
-                f"Initial-condition indices for {module_name!r} must be finite integers"
-            )
-        if np.any(numeric > np.iinfo(np.int32).max):
-            raise OverflowError(
-                f"Initial-condition index for {module_name!r} exceeds int32"
-            )
-        indices = numeric.astype(np.int32)
+        if raw.dtype.kind == "b":
+            raise TypeError(f"Initial-condition indices for {module_name!r} must not be boolean")
     else:
-        raise TypeError(
-            f"Initial condition for {module_name!r} must be an integer or cell array"
-        )
-    if np.any(indices < IC_DEFAULT):
+        raise TypeError(f"Initial condition for {module_name!r} must be an integer or cell array")
+    if raw.size != nxyz:
         raise ValueError(
-            f"Initial-condition indices for {module_name!r} must be -1 or nonnegative"
+            f"Initial-condition array for {module_name!r} has {raw.size} values; expected {nxyz}"
         )
+    numeric = np.asarray(raw, dtype=float).ravel()
+    if not np.all(np.isfinite(numeric)) or not np.all(numeric == np.floor(numeric)):
+        raise ValueError(f"Initial-condition indices for {module_name!r} must be finite integers")
+    if np.any(numeric < IC_DEFAULT):
+        raise ValueError(f"Initial-condition indices for {module_name!r} must be -1 or nonnegative")
+    if np.any(numeric > np.iinfo(np.int32).max):
+        raise OverflowError(f"Initial-condition index for {module_name!r} exceeds int32")
+    indices = numeric.astype(np.int32)
     return indices
 
 
@@ -50,6 +46,7 @@ def create_ic_array_from_map(
     nxyz: int, ic_map: Mapping[str, object], *, strict: bool = True
 ) -> np.ndarray:
     """Pack named PHREEQC entities in the seven-block PhreeqcRM order."""
+    nxyz = require_integer("nxyz", nxyz)
     if not isinstance(ic_map, Mapping) or not ic_map:
         raise TypeError("ic_map must be a non-empty mapping")
     packed = np.full(nxyz * len(MODULE_INDICES), IC_DEFAULT, dtype=np.int32)
@@ -71,7 +68,7 @@ def create_ic_array_from_map(
 
 def setup_single_ic(phreeqc_rm, nxyz: int, ic_map: Mapping[str, object]) -> None:
     """Apply one initial-condition mapping to PhreeqcRM."""
-    print("--- Setting single initial chemical condition ---")
+    _logger.info("--- Setting single initial chemical condition ---")
     phreeqc_rm.InitialPhreeqc2Module(create_ic_array_from_map(nxyz, ic_map))
 
 
@@ -83,7 +80,7 @@ def setup_mixed_ic(
     fractions: ArrayLike,
 ) -> None:
     """Mix two initial-condition mappings cell by cell."""
-    print("--- Setting mixed initial chemical condition ---")
+    _logger.info("--- Setting mixed initial chemical condition ---")
     first = create_ic_array_from_map(nxyz, ic_map1)
     second = create_ic_array_from_map(nxyz, ic_map2)
     fraction_array = ensure_array(nxyz, "mixing fractions", fractions)

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
 import warnings
+from pathlib import Path
 
 import numpy as np
 
 from mf6pqc import (
+    MF6PQC,
     BackendPaths,
     CouplingMethod,
     EnergyOptions,
-    MF6PQC,
     SimulationConfig,
     mf6pqc,
 )
@@ -98,9 +98,7 @@ class PublicApiTests(unittest.TestCase):
         thermal_method, thermal_runner = get_coupling_runner("gwe_vsc")
         self.assertIs(thermal_method, CouplingMethod.THERMAL_SNIA)
         self.assertTrue(callable(thermal_runner))
-        self.assertIs(
-            get_coupling_runner("ThermalSNIA")[0], CouplingMethod.THERMAL_SNIA
-        )
+        self.assertIs(get_coupling_runner("ThermalSNIA")[0], CouplingMethod.THERMAL_SNIA)
         with self.assertRaisesRegex(ValueError, "Unknown coupling method"):
             get_coupling_runner("invented")
 
@@ -175,9 +173,7 @@ class InputValidationTests(unittest.TestCase):
     def test_sia_rate_evaluator_requires_a_stateless_callable(self) -> None:
         with self.assertRaisesRegex(TypeError, "must be callable"):
             MF6PQC(nxyz=1, sia_rate_evaluator=1)
-        with self.assertRaisesRegex(
-            ConfigurationError, "stateless aqueous-rate interface"
-        ):
+        with self.assertRaisesRegex(ConfigurationError, "stateless aqueous-rate interface"):
             MF6PQC(
                 nxyz=1,
                 if_update_porosity_K=True,
@@ -194,9 +190,7 @@ class InputValidationTests(unittest.TestCase):
                 raise AssertionError("invalid fractions must fail before backend call")
 
         with self.assertRaisesRegex(ValueError, r"in \[0, 1\]"):
-            setup_mixed_ic(
-                Chemistry(), 2, {"solution": 0}, {"solution": 1}, [0.2, 1.1]
-            )
+            setup_mixed_ic(Chemistry(), 2, {"solution": 0}, {"solution": 1}, [0.2, 1.1])
 
     def test_vsc_rejects_competing_conductivity_owners(self) -> None:
         with self.assertRaisesRegex(ValueError, "boundary_conductance_updates"):
@@ -204,9 +198,7 @@ class InputValidationTests(unittest.TestCase):
                 nxyz=1,
                 energy_enabled=True,
                 vsc_enabled=True,
-                boundary_conductance_updates={
-                    "GHB": {"cell_index": 0, "distance": 1.0}
-                },
+                boundary_conductance_updates={"GHB": {"cell_index": 0, "distance": 1.0}},
             )
         with self.assertRaisesRegex(ValueError, "apply viscosity.*twice"):
             MF6PQC(
@@ -234,12 +226,8 @@ class ResultSerializationTests(unittest.TestCase):
                 metadata={"coupling_method": "SNIA"},
             )
             root = Path(temporary)
-            np.testing.assert_array_equal(
-                np.load(root / "results_times.npy"), [0.0, 1.5]
-            )
-            manifest = json.loads(
-                (root / "results_manifest.json").read_text(encoding="utf-8")
-            )
+            np.testing.assert_array_equal(np.load(root / "results_times.npy"), [0.0, 1.5])
+            manifest = json.loads((root / "results_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["schema_version"], 1)
             self.assertEqual(manifest["run"]["coupling_method"], "SNIA")
             self.assertNotIn("has_energy", manifest)
@@ -271,9 +259,7 @@ class ResultSerializationTests(unittest.TestCase):
             np.testing.assert_array_equal(
                 np.load(root / "results_temperature.npy"), thermal["temperature"]
             )
-            manifest = json.loads(
-                (root / "results_manifest.json").read_text(encoding="utf-8")
-            )
+            manifest = json.loads((root / "results_manifest.json").read_text(encoding="utf-8"))
             self.assertTrue(manifest["has_energy"])
             self.assertIn("effective_K", manifest["energy"]["files"])
 

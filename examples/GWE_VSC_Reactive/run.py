@@ -2,25 +2,14 @@
 
 from __future__ import annotations
 
-import os
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import os
 
-EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_DIR = os.path.dirname(os.path.dirname(EXAMPLE_DIR))
-sys.path.insert(0, REPO_DIR)
-
-from mf6pqc import (
-    BackendPaths,
-    CellFields,
-    ChemistryOptions,
-    EnergyOptions,
-    FeedbackOptions,
-    MF6PQC,
-    OutputOptions,
-    SimulationConfig,
-)
-
+import _example_support as _example_support
+from _example_support import executable_path, library_path, runtime_path
 from modflow_model import (
     INITIAL_TEMPERATURE,
     NXYZ,
@@ -28,63 +17,79 @@ from modflow_model import (
     build_model,
 )
 
-
-config = SimulationConfig(
-    case_name="GWE_VSC_Reactive",
-    nxyz=NXYZ,
-    nthreads=4,
-    paths=BackendPaths(
-        database=os.path.join(EXAMPLE_DIR, "input_data", "database.dat"),
-        chemistry_input=os.path.join(EXAMPLE_DIR, "input_data", "input.pqi"),
-        modflow_library=os.path.join(REPO_DIR, "bin", "mf6.7.0", "libmf6.dll"),
-        workspace=os.path.join(EXAMPLE_DIR, "simulation"),
-        output_directory=os.path.join(EXAMPLE_DIR, "output"),
-    ),
-    fields=CellFields(
-        temperature_c=INITIAL_TEMPERATURE,
-        pressure_atm=2.0,
-        porosity=POROSITY,
-        saturation=1.0,
-        density_kg_per_litre=1.0,
-    ),
-    chemistry=ChemistryOptions(print_chemistry_mask=0),
-    feedback=FeedbackOptions(
-        update_porosity_and_k=True,
-        mineral_molar_volumes={"ThermalMineral": 0.040},
-    ),
-    energy=EnergyOptions(
-        enabled=True,
-        viscosity_feedback=True,
-        flow_model_name="gwf_model",
-        energy_model_name="gwe_model",
-        sync_temperature_to_chemistry=True,
-        validate_initial_fields=True,
-    ),
-    output=OutputOptions(save_interval=1, progress_interval=10),
-    fail_on_modflow_nonconvergence=True,
+from mf6pqc import (
+    MF6PQC,
+    BackendPaths,
+    CellFields,
+    ChemistryOptions,
+    EnergyOptions,
+    FeedbackOptions,
+    OutputOptions,
+    SimulationConfig,
 )
 
-simulator = MF6PQC.from_config(config)
-try:
-    initial = simulator.setup({"solution": 0, "kinetics": 1})
-    inflow = simulator.get_initial_concentrations(1)
-    # Charge is a PHREEQC numerical residual rather than a transported mass.
-    # MODFLOW specified-concentration packages require a nonnegative value.
-    if "Charge" in simulator.get_components():
-        charge_index = simulator.get_components().index("Charge")
-        start = charge_index * NXYZ
-        initial[start : start + NXYZ] = 0.0
-        inflow[charge_index] = 0.0
-    build_model(
-        sim_ws=str(config.paths.workspace),
-        species_list=simulator.get_components(),
-        initial_concentrations=initial,
-        inflow_concentrations=inflow,
-        mf6_exe=os.path.join(REPO_DIR, "bin", "mf6.7.0", "mf6.exe"),
-    )
-    simulator.run(method="ThermalSNIA")
-    simulator.save_results()
-finally:
-    simulator.finalize()
 
-print("GWE_VSC_Reactive completed. Run validate.py for quantitative checks.")
+def main() -> None:
+    EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    config = SimulationConfig(
+        case_name="GWE_VSC_Reactive",
+        nxyz=NXYZ,
+        nthreads=4,
+        paths=BackendPaths(
+            database=os.path.join(EXAMPLE_DIR, "input_data", "database.dat"),
+            chemistry_input=os.path.join(EXAMPLE_DIR, "input_data", "input.pqi"),
+            modflow_library=library_path("mf6.7.0"),
+            workspace=runtime_path(__file__, "simulation"),
+            output_directory=runtime_path(__file__, "output"),
+        ),
+        fields=CellFields(
+            temperature_c=INITIAL_TEMPERATURE,
+            pressure_atm=2.0,
+            porosity=POROSITY,
+            saturation=1.0,
+            density_kg_per_litre=1.0,
+        ),
+        chemistry=ChemistryOptions(print_chemistry_mask=0),
+        feedback=FeedbackOptions(
+            update_porosity_and_k=True,
+            mineral_molar_volumes={"ThermalMineral": 0.040},
+        ),
+        energy=EnergyOptions(
+            enabled=True,
+            viscosity_feedback=True,
+            flow_model_name="gwf_model",
+            energy_model_name="gwe_model",
+            sync_temperature_to_chemistry=True,
+            validate_initial_fields=True,
+        ),
+        output=OutputOptions(save_interval=1, progress_interval=10),
+        fail_on_modflow_nonconvergence=True,
+    )
+
+    with MF6PQC.from_config(config) as simulator:
+        initial = simulator.setup({"solution": 0, "kinetics": 1})
+        inflow = simulator.get_initial_concentrations(1)
+        # Charge is a PHREEQC numerical residual rather than a transported mass.
+        # MODFLOW specified-concentration packages require a nonnegative value.
+        if "Charge" in simulator.get_components():
+            charge_index = simulator.get_components().index("Charge")
+            start = charge_index * NXYZ
+            initial[start : start + NXYZ] = 0.0
+            inflow[charge_index] = 0.0
+        build_model(
+            sim_ws=str(config.paths.workspace),
+            species_list=simulator.get_components(),
+            initial_concentrations=initial,
+            inflow_concentrations=inflow,
+            mf6_exe=executable_path("mf6.7.0"),
+        )
+        simulator.run(method="ThermalSNIA")
+        simulator.save_results()
+
+        print("GWE_VSC_Reactive completed. Run validate.py for quantitative checks.")
+
+
+if __name__ == "__main__":
+    _example_support.configure_logging()
+    main()

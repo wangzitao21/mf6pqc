@@ -1,12 +1,2 @@
-# Core runtime (mirrors pyproject.toml)
-numpy>=1.26,<3
-modflowapi>=0.2,<0.3
-phreeqcrm>=0.0.15,<0.1
-
-# Public validation cases and plotting notebooks
-flopy>=3.9,<4
-scipy>=1.11,<2
-pandas>=2.0,<3
-matplotlib>=3.7,<4
-seaborn>=0.12,<1
-gstools>=1.6,<2
+# Compatibility entry point; dependencies are maintained only in pyproject.toml.
+-e .[examples]

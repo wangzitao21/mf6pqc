@@ -72,9 +72,8 @@ K_new = K_old × (phi_new / phi_old)^3
 
 ```powershell
 python examples\SaltLake_Brine3D\run.py --profile smoke --scenario feedback
-python examples\SaltLake_Brine3D\analyze_results.py --profile smoke --scenario feedback
 python examples\SaltLake_Brine3D\validate.py --profile smoke --scenario feedback
-python examples\SaltLake_Brine3D\plot_results.py --profile smoke --scenario feedback
+python examples\SaltLake_Brine3D\plot.py --profile smoke --scenario feedback
 ```
 
 正式运行用于优势通道判别的 30 年高分辨率对照组：
@@ -82,7 +81,7 @@ python examples\SaltLake_Brine3D\plot_results.py --profile smoke --scenario feed
 ```powershell
 python examples\SaltLake_Brine3D\run.py --profile highres --scenario feedback
 python examples\SaltLake_Brine3D\run.py --profile highres --scenario fixed
-python examples\SaltLake_Brine3D\channel_diagnostics.py --profile highres
+python examples\SaltLake_Brine3D\plot.py --channels --profile highres
 ```
 
 Pitzer 动力学计算成本较高。本机上每个 `highres` 30 年情景约需 4.5 小时。若只想隔离密度机制，可在运行、分析和验证命令中分别使用 `--no-density` 与 `--constant-density`。
@@ -99,7 +98,7 @@ Pitzer 动力学计算成本较高。本机上每个 `highres` 30 年情景约�
 - `summary_metrics.json`：突破时间、峰值品位、反应体积和通道化指标；
 - `overview.png`：第一层水头、K 浓度、溶解量、孔隙率、K/K0 与井水曲线。
 
-`compare_scenarios.py` 另外生成同一时刻的井水 K、Li、Br 对照曲线和反馈—固定介质差值。
+`validate.py --compare` 另外生成同一时刻的井水 K、Li、Br 对照曲线和反馈—固定介质差值。
 
 `validate.py` 检查全部时间步是否完成、MODFLOW 水量误差、矿物非负性、Pitzer 密度范围、孔隙率/K 物理范围，以及幂律反馈恒等式。验证通过只表示数值实现自洽，不代表参数已由现场资料验证。
 

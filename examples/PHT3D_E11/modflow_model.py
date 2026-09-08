@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import _example_support as _example_support
 import flopy
 import numpy as np
 
 from mf6pqc.utils import get_gwt_model_name
-
 
 NLAY = 58
 NROW = 1
@@ -17,11 +21,7 @@ TRANSPORT_SUBSTEPS = 5
 TOTAL_TRANSPORT_STEPS = FLOW_STEPS * TRANSPORT_SUBSTEPS
 
 DELR = np.array(
-    [1.0] * 7
-    + [0.5] * 2
-    + [0.25] * 76
-    + [0.5] * 2
-    + [1.0] * 12,
+    [1.0] * 7 + [0.5] * 2 + [0.25] * 76 + [0.5] * 2 + [1.0] * 12,
     dtype=float,
 )
 DELC = np.array([1.0], dtype=float)
@@ -159,7 +159,7 @@ def transport_model(
     well_concentrations = np.zeros(len(species_list), dtype=float)
     left_wells = [
         [(layer, 0, 0), float(rate), *well_concentrations]
-        for layer, rate in zip(range(8, NLAY), left_rates)
+        for layer, rate in zip(range(8, NLAY), left_rates, strict=False)
     ]
     flopy.mf6.ModflowGwfwel(
         gwf,
@@ -179,9 +179,7 @@ def transport_model(
         stress_period_data={0: right_chd},
     )
 
-    recharge = [
-        [(0, 0, col), 1.0e-3, *recharge_concentrations] for col in range(NCOL)
-    ]
+    recharge = [[(0, 0, col), 1.0e-3, *recharge_concentrations] for col in range(NCOL)]
     flopy.mf6.ModflowGwfrch(
         gwf,
         pname="RCH-TOP",
@@ -302,11 +300,7 @@ def transport_model(
             # With CB_OFFSET=0 PHT3D resets charge imbalance before chemistry.
             # A full-grid zero CNC provides the same behaviour without adding
             # a component-specific branch to the reusable coupling module.
-            cnc_data = [
-                [(layer, 0, col), 0.0]
-                for layer in range(NLAY)
-                for col in range(NCOL)
-            ]
+            cnc_data = [[(layer, 0, col), 0.0] for layer in range(NLAY) for col in range(NCOL)]
         flopy.mf6.ModflowGwtcnc(
             gwt,
             pname="CNC-UPSTREAM" if is_mobile else "CNC-ZERO-CHARGE",

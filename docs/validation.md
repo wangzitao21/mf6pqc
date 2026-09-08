@@ -13,7 +13,7 @@ python -m compileall -q mf6pqc tests examples
 
 ## Tier 1 — backend-free regression tests
 
-Target: less than one second. These tests use small fake backend objects and
+Target: a few seconds. These tests use small fake backend objects and
 cover array layout, time schedules, initial-condition maps, constitutive
 relationships, result serialization, convergence policy, and lifecycle.
 
@@ -28,7 +28,7 @@ Target: seconds to tens of seconds.
 ```powershell
 python examples\PHT3D_E01\run.py
 python examples\PHT3D_E01\validate.py
-python examples\Splitting_KineticDecay\reaction_only_check.py
+python examples\Splitting_KineticDecay\validate.py
 python examples\GWE_VSC_Reactive\run.py
 python examples\GWE_VSC_Reactive\validate.py
 ```
@@ -76,8 +76,7 @@ absolute or relative tolerances. Plot inspection alone is not a pass criterion.
 ## Tier 4 — long release benchmarks
 
 Target: hours. Xie2015 and other long cases are never part of the ordinary
-edit-test loop. Run them only when changes touch their numerical path or for a
-release candidate. Record:
+edit-test loop. They require a separate explicit run decision; no automated check launches them. Record:
 
 - code commit and dirty-tree status;
 - MODFLOW and Python package versions;
@@ -109,3 +108,7 @@ not the sole release criterion. Prefer a combination of:
 - expected ordering or monotonicity;
 - physically meaningful bounds;
 - bitwise/hash checks only for tightly controlled baselines.
+
+## Current release evidence
+
+See [release-readiness.md](release-readiness.md) for the results of this revision, including the pre-existing E13 pH/Ca discrepancy. A static/import check does not count as a numerical validation of an unrun case.

@@ -1,25 +1,26 @@
 from __future__ import annotations
 
-import argparse
-import csv
-import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
-from scipy.special import erfc
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import argparse
+import csv
+import json
+import subprocess
 
+import _example_support as _example_support
+import numpy as np
+from _example_support import library_path, runtime_path
+from scipy.special import erfc
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXAMPLE_DIR.parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+
+from modflow_model import build_transport_model
 
 from mf6pqc import MF6PQC
 from mf6pqc.utils import get_gwt_model_name
-from modflow_model import build_transport_model
-
 
 DAYS_PER_YEAR = 365.25
 NGRID_NODES = 16
@@ -39,7 +40,6 @@ METHODS = ("SNIA", "Strang", "SIA")
 
 
 class PhreeqcInstantaneousRateEvaluator:
-
     def __init__(self) -> None:
         self.simulator: MF6PQC | None = None
 
@@ -61,14 +61,12 @@ class PhreeqcInstantaneousRateEvaluator:
             simulator.phreeqc_rm.SetConcentrations(
                 np.asarray(concentrations, dtype=float).reshape(-1)
             )
-            simulator.phreeqc_rm.SetTime(
-                target_time_days * 24.0 * 60.0 * 60.0
-            )
+            simulator.phreeqc_rm.SetTime(target_time_days * 24.0 * 60.0 * 60.0)
             simulator.phreeqc_rm.SetTimeStep(0.0)
             simulator.phreeqc_rm.RunCells()
-            selected = np.asarray(
-                simulator.phreeqc_rm.GetSelectedOutput(), dtype=float
-            ).reshape(-1, simulator.nxyz)
+            selected = np.asarray(simulator.phreeqc_rm.GetSelectedOutput(), dtype=float).reshape(
+                -1, simulator.nxyz
+            )
         finally:
             simulator.phreeqc_rm.StateApply(state_id)
             simulator.phreeqc_rm.StateDelete(state_id)
@@ -86,16 +84,16 @@ def analytical_solution(x_m: np.ndarray) -> np.ndarray:
     """Return Bear's semi-infinite advection-dispersion-decay solution."""
     x_m = np.asarray(x_m, dtype=float)
     dispersion = VELOCITY_M_PER_YEAR * DISPERSIVITY_M
-    root = np.sqrt(
-        VELOCITY_M_PER_YEAR**2
-        + 4.0 * DECAY_RATE_PER_YEAR * dispersion
-    )
+    root = np.sqrt(VELOCITY_M_PER_YEAR**2 + 4.0 * DECAY_RATE_PER_YEAR * dispersion)
     scale = 2.0 * np.sqrt(dispersion * FINAL_TIME_YEARS)
-    return 0.5 * np.exp(VELOCITY_M_PER_YEAR * x_m / (2.0 * dispersion)) * (
-        np.exp(-root * x_m / (2.0 * dispersion))
-        * erfc((x_m - root * FINAL_TIME_YEARS) / scale)
-        + np.exp(root * x_m / (2.0 * dispersion))
-        * erfc((x_m + root * FINAL_TIME_YEARS) / scale)
+    return (
+        0.5
+        * np.exp(VELOCITY_M_PER_YEAR * x_m / (2.0 * dispersion))
+        * (
+            np.exp(-root * x_m / (2.0 * dispersion)) * erfc((x_m - root * FINAL_TIME_YEARS) / scale)
+            + np.exp(root * x_m / (2.0 * dispersion))
+            * erfc((x_m + root * FINAL_TIME_YEARS) / scale)
+        )
     )
 
 
@@ -103,11 +101,7 @@ def logical_steps_for_cfl(cfl: float) -> int:
     """Map the paper CFL number to an integer logical-step count."""
     if cfl <= 0.0:
         raise ValueError("CFL must be positive")
-    raw_steps = (
-        VELOCITY_M_PER_YEAR
-        * FINAL_TIME_YEARS
-        / (GRID_SPACING_M * cfl)
-    )
+    raw_steps = VELOCITY_M_PER_YEAR * FINAL_TIME_YEARS / (GRID_SPACING_M * cfl)
     steps = int(round(raw_steps))
     if not np.isclose(raw_steps, steps, rtol=0.0, atol=1.0e-10):
         raise ValueError(
@@ -126,13 +120,7 @@ def _profile_key(method: str, cfl: float) -> str:
 
 
 def _run_directory(base: str, method: str, cfl: float) -> Path:
-    return (
-        EXAMPLE_DIR
-        / base
-        / "paper_figure6"
-        / f"cfl_{_cfl_token(cfl)}"
-        / method.lower()
-    )
+    return EXAMPLE_DIR / base / "paper_figure6" / f"cfl_{_cfl_token(cfl)}" / method.lower()
 
 
 def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
@@ -140,25 +128,15 @@ def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
     logical_steps = logical_steps_for_cfl(cfl)
     workspace = _run_directory("simulation", method, cfl)
     output_dir = _run_directory("output", method, cfl)
-    rate_evaluator = (
-        PhreeqcInstantaneousRateEvaluator() if method == "SIA" else None
-    )
+    rate_evaluator = PhreeqcInstantaneousRateEvaluator() if method == "SIA" else None
     simulator = MF6PQC(
-        case_name=(
-            f"steefel1996_decay_{method.lower()}_cfl_{_cfl_token(cfl)}"
-        ),
+        case_name=(f"steefel1996_decay_{method.lower()}_cfl_{_cfl_token(cfl)}"),
         nxyz=NGRID_NODES,
         nthreads=2,
         porosity=VOLUMETRIC_WATER_CONTENT,
-        db_path=str(
-            REPO_ROOT
-            / "examples"
-            / "PHT3D_E01"
-            / "input_data"
-            / "phreeqc.dat"
-        ),
+        db_path=str(REPO_ROOT / "examples" / "PHT3D_E01" / "input_data" / "phreeqc.dat"),
         pqi_path=str(EXAMPLE_DIR / "input_data" / "input.pqi"),
-        modflow_dll_path=str(REPO_ROOT / "bin" / "mf6.7.0" / "libmf6.dll"),
+        modflow_dll_path=library_path("mf6.7.0"),
         workspace=str(workspace),
         output_dir=str(output_dir),
         progress_interval=250,
@@ -180,9 +158,7 @@ def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
             kinetic_zones.fill(0)
         else:
             kinetic_zones[0] = 0
-        initial = simulator.setup(
-            {"solution": 0, "kinetics": kinetic_zones}
-        )
+        initial = simulator.setup({"solution": 0, "kinetics": kinetic_zones})
         boundary = simulator.get_initial_concentrations(1)
         build_transport_model(
             str(workspace),
@@ -203,12 +179,8 @@ def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
             advection_scheme="CENTRAL",
         )
         getattr(simulator, f"run_{method}")()
-        address = simulator.modflow_api.get_var_address(
-            "X", get_gwt_model_name("Spe")
-        )
-        full_profile = np.asarray(
-            simulator.modflow_api.get_value(address), dtype=float
-        ).copy()
+        address = simulator.modflow_api.get_var_address("X", get_gwt_model_name("Spe"))
+        full_profile = np.asarray(simulator.modflow_api.get_value(address), dtype=float).copy()
         spe_index = simulator.get_components().index("Spe")
         inlet_concentration = float(boundary[spe_index])
         # Node 0 represents the prescribed x=0 boundary.  Figure 6 reports
@@ -216,25 +188,17 @@ def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
         # Normalize by PhreeqcRM's mol/L value so the analytical boundary is
         # exactly C/C0=1 despite PHREEQC solution-volume conversion.
         profile = full_profile[1:].copy() / inlet_concentration
-        total_sia_iterations = (
-            int(np.sum(simulator.sia_iterations)) if method == "SIA" else None
-        )
+        total_sia_iterations = int(np.sum(simulator.sia_iterations)) if method == "SIA" else None
         logical_dt_days = FINAL_TIME_DAYS / logical_steps
         metadata = {
             "method": method,
-            "cfl": float(
-                VELOCITY_M_PER_DAY
-                * logical_dt_days
-                / GRID_SPACING_M
-            ),
+            "cfl": float(VELOCITY_M_PER_DAY * logical_dt_days / GRID_SPACING_M),
             "logical_steps": logical_steps,
             "logical_dt_days": logical_dt_days,
             "logical_dt_years": logical_dt_days / DAYS_PER_YEAR,
             "damkohler_per_step": DECAY_RATE_PER_DAY * logical_dt_days,
             "phreeqc_inlet_concentration_mol_per_l": inlet_concentration,
-            "boundary_endpoint_concentration": float(
-                full_profile[0] / inlet_concentration
-            ),
+            "boundary_endpoint_concentration": float(full_profile[0] / inlet_concentration),
             "advection_scheme": "CENTRAL",
             "sia_source_form": (
                 "instantaneous PhreeqcRM USER_PUNCH rate, paper equation (108)"
@@ -252,15 +216,11 @@ def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
                 "Strang": logical_steps,
                 "SIA": total_sia_iterations,
             }[method],
-            "full_phreeqc_reaction_steps": (
-                logical_steps if method in {"SNIA", "Strang"} else 0
-            ),
+            "full_phreeqc_reaction_steps": (logical_steps if method in {"SNIA", "Strang"} else 0),
             "instantaneous_phreeqc_rate_evaluations": (
                 total_sia_iterations if method == "SIA" else 0
             ),
-            "diagnostic_respeciations": (
-                logical_steps if method == "Strang" else 0
-            ),
+            "diagnostic_respeciations": (logical_steps if method == "Strang" else 0),
             "total_sia_iterations": total_sia_iterations,
             "wall_time_seconds": simulator.last_run_wall_time_seconds,
             "sia_diagnostics": list(simulator.sia_diagnostics),
@@ -270,9 +230,7 @@ def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
         simulator.finalize()
 
 
-def _persist_child_result(
-    method: str, cfl: float, profile: np.ndarray, metadata: dict
-) -> None:
+def _persist_child_result(method: str, cfl: float, profile: np.ndarray, metadata: dict) -> None:
     output_dir = _run_directory("output", method, cfl)
     output_dir.mkdir(parents=True, exist_ok=True)
     np.save(output_dir / "final_profile.npy", profile)
@@ -294,9 +252,7 @@ def _launch_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
     subprocess.run(command, cwd=REPO_ROOT, check=True)
     output_dir = _run_directory("output", method, cfl)
     profile = np.load(output_dir / "final_profile.npy")
-    metadata = json.loads(
-        (output_dir / "metadata.json").read_text(encoding="utf-8")
-    )
+    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
     return profile, metadata
 
 
@@ -313,21 +269,13 @@ def error_metrics(profile: np.ndarray, reference: np.ndarray) -> dict[str, float
 
 def _validate_profile(method: str, cfl: float, profile: np.ndarray) -> None:
     if profile.shape != (NINTERIOR_NODES,) or not np.all(np.isfinite(profile)):
-        raise AssertionError(
-            f"{method}/CFL={cfl:g} produced an invalid final profile"
-        )
+        raise AssertionError(f"{method}/CFL={cfl:g} produced an invalid final profile")
     if np.min(profile) < -1.0e-12 or np.max(profile) > 1.0 + 1.0e-8:
-        raise AssertionError(
-            f"{method}/CFL={cfl:g} violates the [0, 1] concentration range"
-        )
+        raise AssertionError(f"{method}/CFL={cfl:g} violates the [0, 1] concentration range")
 
 
 def _realizations() -> list[tuple[str, float]]:
-    return [
-        (method, cfl)
-        for method in METHODS
-        for cfl in reversed(PAPER_CFL_VALUES)
-    ]
+    return [(method, cfl) for method in METHODS for cfl in reversed(PAPER_CFL_VALUES)]
 
 
 def _write_csv(rows: list[dict], path: Path) -> None:
@@ -340,12 +288,8 @@ def _write_csv(rows: list[dict], path: Path) -> None:
 
 def run_paper_replication() -> None:
     """Run the Figure 6 matrix and validate the algorithm-level signatures."""
-    x_paper_nodes = (
-        np.arange(1, NGRID_NODES, dtype=float) * GRID_SPACING_M
-    )
-    x_cell_centers = (
-        np.arange(1, NGRID_NODES, dtype=float) + 0.5
-    ) * GRID_SPACING_M
+    x_paper_nodes = np.arange(1, NGRID_NODES, dtype=float) * GRID_SPACING_M
+    x_cell_centers = (np.arange(1, NGRID_NODES, dtype=float) + 0.5) * GRID_SPACING_M
     x_analytical_dense = np.linspace(0.0, LENGTH_M, 601)
     analytical_paper_nodes = analytical_solution(x_paper_nodes)
     analytical_cell_centers = analytical_solution(x_cell_centers)
@@ -368,9 +312,7 @@ def run_paper_replication() -> None:
                 "logical_steps": run_metadata["logical_steps"],
                 "logical_dt_years": run_metadata["logical_dt_years"],
                 "damkohler_per_step": run_metadata["damkohler_per_step"],
-                "boundary_endpoint_concentration": run_metadata[
-                    "boundary_endpoint_concentration"
-                ],
+                "boundary_endpoint_concentration": run_metadata["boundary_endpoint_concentration"],
                 "paper_node_l2": paper_errors["l2"],
                 "paper_node_rmse": paper_errors["rmse"],
                 "paper_node_l1_mean": paper_errors["l1_mean"],
@@ -381,9 +323,7 @@ def run_paper_replication() -> None:
                 "cell_center_linf": center_errors["linf"],
                 "transport_solves": run_metadata["transport_solves"],
                 "reaction_evaluations": run_metadata["reaction_evaluations"],
-                "full_phreeqc_reaction_steps": run_metadata[
-                    "full_phreeqc_reaction_steps"
-                ],
+                "full_phreeqc_reaction_steps": run_metadata["full_phreeqc_reaction_steps"],
                 "instantaneous_phreeqc_rate_evaluations": run_metadata[
                     "instantaneous_phreeqc_rate_evaluations"
                 ],
@@ -392,11 +332,10 @@ def run_paper_replication() -> None:
             }
         )
 
-    output_dir = EXAMPLE_DIR / "output"
+    output_dir = runtime_path(__file__, "output")
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_arrays = {
-        _profile_key(method, cfl): profile
-        for (method, cfl), profile in profiles.items()
+        _profile_key(method, cfl): profile for (method, cfl), profile in profiles.items()
     }
     np.savez(
         output_dir / "paper_figure6_data.npz",
@@ -414,26 +353,18 @@ def run_paper_replication() -> None:
     )
 
     row_lookup = {(row["method"], row["cfl"]): row for row in rows}
-    cfl_one_errors = {
-        method: row_lookup[(method, 1.0)]["paper_node_rmse"]
-        for method in METHODS
-    }
+    cfl_one_errors = {method: row_lookup[(method, 1.0)]["paper_node_rmse"] for method in METHODS}
     same_cfl_order = {
         format(cfl, "g"): {
-            method: row_lookup[(method, cfl)]["paper_node_rmse"]
-            for method in METHODS
+            method: row_lookup[(method, cfl)]["paper_node_rmse"] for method in METHODS
         }
         for cfl in PAPER_CFL_VALUES
     }
     sia_diagnostics = [
-        item
-        for cfl in PAPER_CFL_VALUES
-        for item in metadata[("SIA", cfl)]["sia_diagnostics"]
+        item for cfl in PAPER_CFL_VALUES for item in metadata[("SIA", cfl)]["sia_diagnostics"]
     ]
     validation = {
-        "source_case": (
-            "Steefel and MacQuarrie (1996), equation (114) and Figure 6"
-        ),
+        "source_case": ("Steefel and MacQuarrie (1996), equation (114) and Figure 6"),
         "reference_type": "analytical semi-infinite solution",
         "sia_formulation": (
             "instantaneous endpoint reaction rate R^(n+1,m), as written in "
@@ -468,15 +399,11 @@ def run_paper_replication() -> None:
         "asserted_order_at_cfl_1": "SIA < Strang < SNIA",
         "asserted_work_order_at_cfl_1": "SNIA < Strang < SIA",
         "sia_accuracy_threshold_rmse": 5.0e-3,
-        "snia_requires_refinement": (
-            "SNIA at CFL=0.1 must be more accurate than SNIA at CFL=1"
-        ),
+        "snia_requires_refinement": ("SNIA at CFL=0.1 must be more accurate than SNIA at CFL=1"),
         "sia_all_steps_converged": bool(sia_diagnostics)
         and all(item["converged"] for item in sia_diagnostics),
         "sia_total_iterations": {
-            format(cfl, "g"): metadata[("SIA", cfl)][
-                "total_sia_iterations"
-            ]
+            format(cfl, "g"): metadata[("SIA", cfl)]["total_sia_iterations"]
             for cfl in PAPER_CFL_VALUES
         },
         "boundary_condition_preserved": all(
@@ -498,63 +425,39 @@ def run_paper_replication() -> None:
             f"cell-center RMSE={row['cell_center_rmse']:.6e}"
         )
 
-    if not (
-        cfl_one_errors["SIA"]
-        < cfl_one_errors["Strang"]
-        < cfl_one_errors["SNIA"]
-    ):
+    if not (cfl_one_errors["SIA"] < cfl_one_errors["Strang"] < cfl_one_errors["SNIA"]):
         raise AssertionError(
-            "Expected Figure 6 at CFL=1 to order paper-node RMSE as "
-            "SIA < Strang < SNIA"
+            "Expected Figure 6 at CFL=1 to order paper-node RMSE as SIA < Strang < SNIA"
         )
     if cfl_one_errors["SIA"] > validation["sia_accuracy_threshold_rmse"]:
         raise AssertionError(
-            "Paper-rate SIA did not stay within the 5e-3 RMSE acceptance "
-            "threshold"
+            "Paper-rate SIA did not stay within the 5e-3 RMSE acceptance threshold"
         )
     if not (
-        row_lookup[("SNIA", 0.1)]["paper_node_rmse"]
-        < row_lookup[("SNIA", 1.0)]["paper_node_rmse"]
+        row_lookup[("SNIA", 0.1)]["paper_node_rmse"] < row_lookup[("SNIA", 1.0)]["paper_node_rmse"]
     ):
         raise AssertionError("SNIA did not improve after reducing its time step")
-    cfl_one_work = {
-        method: row_lookup[(method, 1.0)]["transport_solves"]
-        for method in METHODS
-    }
-    if not (
-        cfl_one_work["SNIA"]
-        < cfl_one_work["Strang"]
-        < cfl_one_work["SIA"]
-    ):
-        raise AssertionError(
-            "Expected CFL=1 transport work to order as SNIA < Strang < SIA"
-        )
+    cfl_one_work = {method: row_lookup[(method, 1.0)]["transport_solves"] for method in METHODS}
+    if not (cfl_one_work["SNIA"] < cfl_one_work["Strang"] < cfl_one_work["SIA"]):
+        raise AssertionError("Expected CFL=1 transport work to order as SNIA < Strang < SIA")
     if not validation["sia_all_steps_converged"]:
         raise AssertionError("At least one strict SIA logical step did not converge")
     if not validation["boundary_condition_preserved"]:
-        raise AssertionError(
-            "The explicit x=0 Dirichlet node was altered by a coupling substep"
-        )
+        raise AssertionError("The explicit x=0 Dirichlet node was altered by a coupling substep")
     if profiles[("SNIA", 1.0)][0] >= analytical_paper_nodes[0]:
-        raise AssertionError(
-            "SNIA did not reproduce the paper's inlet over-reaction signature"
-        )
-    print(
-        "Paper-rate SIA validation passed; execute plot.ipynb or "
-        "plot_results.py to create figures."
-    )
+        raise AssertionError("SNIA did not reproduce the paper's inlet over-reaction signature")
+    print("Paper-rate SIA validation passed; execute plot.ipynb or plot.py to create figures.")
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument("--method", choices=METHODS)
     parser.add_argument("--cfl", type=float, default=1.0)
     arguments = parser.parse_args()
-    os.chdir(REPO_ROOT)
+
     if arguments.method:
         result, run_metadata = run_method(arguments.method, arguments.cfl)
-        _persist_child_result(
-            arguments.method, arguments.cfl, result, run_metadata
-        )
+        _persist_child_result(arguments.method, arguments.cfl, result, run_metadata)
     else:
         run_paper_replication()

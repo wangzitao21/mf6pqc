@@ -2,20 +2,26 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import _example_support as _example_support
+import numpy as np
+from _example_support import runtime_path
 
 CASE_DIR = Path(__file__).resolve().parent
 
 
 def main() -> None:
-    results = np.load(CASE_DIR / "output" / "results.npy")
-    headings = (CASE_DIR / "output" / "results_headings.txt").read_text(
-        encoding="utf-8"
-    ).splitlines()
-    times = np.load(CASE_DIR / "output" / "results_times.npy")
+    results = np.load(runtime_path(__file__, "output") / "results.npy")
+    headings = (
+        (runtime_path(__file__, "output") / "results_headings.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    times = np.load(runtime_path(__file__, "output") / "results_times.npy")
     reference = np.load(CASE_DIR / "input_data" / "official_reference.npz")["Spe"]
 
     expected_shape = (2, len(headings), reference.size)
@@ -36,15 +42,10 @@ def main() -> None:
     if nrmse > 0.02:
         raise AssertionError(f"NRMSE {nrmse:.6%} exceeds the 2% validation limit")
     if maximum_absolute_error > 0.05:
-        raise AssertionError(
-            f"Maximum absolute error {maximum_absolute_error:.6g} exceeds 0.05"
-        )
-    print(
-        "PHT3D_E01 validation passed: "
-        f"NRMSE={nrmse:.4%}, max_abs={maximum_absolute_error:.6g}"
-    )
+        raise AssertionError(f"Maximum absolute error {maximum_absolute_error:.6g} exceeds 0.05")
+    print(f"PHT3D_E01 validation passed: NRMSE={nrmse:.4%}, max_abs={maximum_absolute_error:.6g}")
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     main()
-

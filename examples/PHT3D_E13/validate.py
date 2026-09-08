@@ -1,11 +1,15 @@
 """Basic numerical checks for the E13 breakthrough curves."""
 
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import json
+
+import _example_support as _example_support
 import numpy as np
-
-from plot_utils import comparison_metrics, load_results
-
+from _example_support import runtime_path
+from plot import comparison_metrics, load_results
 
 CASE_DIR = Path(__file__).resolve().parent
 
@@ -32,19 +36,28 @@ def main() -> None:
         "pH": 0.040,
         "Ca": 0.045,
     }
-    for heading, values in comparison_metrics(CASE_DIR).items():
-        print(
-            f"{heading:>5}: NRMSE={values['nrmse']:.4f}, "
-            f"correlation={values['correlation']:.4f}"
-        )
+    metrics = comparison_metrics(CASE_DIR)
+    failures = []
+    for heading, values in metrics.items():
+        print(f"{heading:>5}: NRMSE={values['nrmse']:.4f}, correlation={values['correlation']:.4f}")
         if values["nrmse"] > limits[heading]:
-            raise AssertionError(f"{heading} NRMSE exceeds its regression limit")
+            failures.append(f"{heading} NRMSE exceeds {limits[heading]}")
         if values["correlation"] < 0.97:
-            raise AssertionError(
-                f"{heading} correlation is below its regression limit"
-            )
+            failures.append(f"{heading} correlation is below 0.97")
+    report = {
+        "metrics": metrics,
+        "nrmse_limits": limits,
+        "correlation_min": 0.97,
+        "failures": failures,
+        "passed": not failures,
+    }
+    output = runtime_path(__file__, "output")
+    (output / "validation.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    if failures:
+        raise AssertionError("; ".join(failures))
     print("Validation passed.")
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     main()

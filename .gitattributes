@@ -1,0 +1,7 @@
+# Stable text layout for source and documentation; scientific input data are unchanged.
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ipynb text eol=lf

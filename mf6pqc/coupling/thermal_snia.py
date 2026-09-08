@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+import logging
 import time
-
-import numpy as np
 
 from mf6pqc.backends import initialize_modflow6
 from mf6pqc.coupling.common import (
@@ -33,6 +32,8 @@ from mf6pqc.energy import (
 )
 from mf6pqc.exceptions import ConfigurationError
 from mf6pqc.feedback import update_medium_properties, write_conductivity_for_step
+
+_logger = logging.getLogger(__name__)
 
 
 def thermal_time_step(sim, state: StandardCouplingState) -> None:
@@ -64,16 +65,12 @@ def thermal_time_step(sim, state: StandardCouplingState) -> None:
         sim.signed_components,
     )
     # run_reaction_step synchronizes the post-GWE temperature before RunCells.
-    run_reaction_step(
-        sim, state.transported, state.reacted, reaction_start_time, dt
-    )
+    run_reaction_step(sim, state.transported, state.reacted, reaction_start_time, dt)
     update_selected_output(sim)
     write_concentrations_to_modflow(
         state.concentration_variables, state.species_slices, state.reacted
     )
-    state.current_k11 = update_medium_properties(
-        sim, state.current_k11, state.logical_step
-    )
+    state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
     save_time_step_results(sim, state.logical_step, state.current_time)
     save_energy_time_step_results(sim, state.logical_step)
     state.logical_step += 1
@@ -90,11 +87,9 @@ def run_thermal_snia(sim) -> None:
     """Run the opt-in explicit GWE/VSC reactive-transport algorithm."""
     validate_setup(sim)
     if not sim.energy_enabled:
-        raise ConfigurationError(
-            "ThermalSNIA requires energy_enabled=True and a MODFLOW GWE model"
-        )
+        raise ConfigurationError("ThermalSNIA requires energy_enabled=True and a MODFLOW GWE model")
     initialize_modflow6(sim)
-    print("\n--- Starting reactive transport simulation (ThermalSNIA) ---")
+    _logger.info("\n--- Starting reactive transport simulation (ThermalSNIA) ---")
     start = time.perf_counter()
     cache_basic_geometry(sim)
     setup_energy_coupling(sim)

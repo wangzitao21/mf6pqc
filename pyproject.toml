@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "mf6pqc"
-version = "0.2.0.dev0"
+dynamic = ["version"]
 description = "Reactive-transport coupling between MODFLOW 6 and PhreeqcRM"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {file = "LICENSE"}
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 authors = [
   {name = "Zitao Wang", email = "zitao.wang@outlook.com"},
 ]
@@ -22,7 +23,6 @@ keywords = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -31,8 +31,8 @@ classifiers = [
 ]
 dependencies = [
   "numpy>=1.26,<3",
-  "modflowapi>=0.2,<0.3",
-  "phreeqcrm>=0.0.15,<0.1",
+  "modflowapi>=1.0.1,<2",
+  "phreeqcrm>=0.0.18,<0.1",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +43,8 @@ examples = [
   "matplotlib>=3.7,<4",
   "seaborn>=0.12,<1",
   "gstools>=1.6,<2",
+  "jupyterlab>=4,<5",
+  "nbformat>=5.9,<6",
 ]
 test = [
   "coverage>=7.6,<8",
@@ -50,15 +52,22 @@ test = [
 dev = [
   "build>=1.2,<2",
   "coverage>=7.6,<8",
-  "ruff>=0.9,<1",
+  "ruff>=0.16,<1",
+  "twine>=6,<8",
 ]
 
 [project.urls]
 Repository = "https://github.com/wangzitao21/mf6pqc"
 Issues = "https://github.com/wangzitao21/mf6pqc/issues"
 
-[tool.setuptools.packages.find]
-include = ["mf6pqc*"]
+[tool.setuptools.dynamic]
+version = {attr = "mf6pqc._version.__version__"}
+
+[tool.setuptools.package-data]
+mf6pqc = ["py.typed"]
+
+[tool.setuptools]
+packages = ["mf6pqc", "mf6pqc.coupling"]
 
 [tool.ruff]
 line-length = 100
@@ -67,3 +76,18 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Executable source-tree examples bootstrap their import path explicitly.
+"examples/**/*.py" = ["E402"]
+"examples/**/*.ipynb" = ["E402"]
+# Preserve the historical enum string representation.
+"mf6pqc/coupling/__init__.py" = ["UP042"]
+
+[tool.coverage.run]
+source = ["mf6pqc"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

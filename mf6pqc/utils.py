@@ -1,8 +1,38 @@
 import hashlib
 import numbers
+
 import numpy as np
 
+from mf6pqc.exceptions import ConfigurationError
 from mf6pqc.types import ArrayLike
+
+
+def require_integer(name: str, value, *, minimum: int = 1) -> int:
+    """Validate an integer-valued scalar without truncation or bool coercion."""
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, numbers.Real)
+        or not np.isfinite(value)
+        or int(value) != value
+        or value < minimum
+    ):
+        raise ConfigurationError(f"{name} must be an integer >= {minimum}")
+    return int(value)
+
+
+def step_numbers(name: str, values) -> frozenset[int] | None:
+    """Normalize an explicit, nonempty one-based step schedule."""
+    if values is None:
+        return None
+    if isinstance(values, (str, bytes)):
+        raise ConfigurationError(f"{name} must be a sequence of positive integers")
+    try:
+        result = frozenset(require_integer(name, value) for value in values)
+    except TypeError as exc:
+        raise ConfigurationError(f"{name} must be a sequence of positive integers") from exc
+    if not result:
+        raise ConfigurationError(f"{name} must not be empty; use None for interval saving")
+    return result
 
 
 def ensure_array(nxyz: int, name: str, value: ArrayLike) -> np.ndarray:

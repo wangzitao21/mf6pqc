@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-from plot_utils import comparison_metrics, load_comparison
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import _example_support as _example_support
+from plot import comparison_metrics, load_comparison
 
 CASE_DIR = Path(__file__).resolve().parent
 MAX_NRMSE = 0.03
@@ -26,12 +29,11 @@ def main() -> None:
         if values["NRMSE"] > MAX_NRMSE:
             raise AssertionError(f"{species} NRMSE exceeds {MAX_NRMSE}")
         if values["Correlation"] < MIN_CORRELATION:
-            raise AssertionError(
-                f"{species} correlation is below {MIN_CORRELATION}"
-            )
+            raise AssertionError(f"{species} correlation is below {MIN_CORRELATION}")
 
     print("Validation passed.")
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     main()

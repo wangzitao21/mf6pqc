@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
 
 from mf6pqc.coupling.sia import run_sia
 from mf6pqc.coupling.snia import run_standard

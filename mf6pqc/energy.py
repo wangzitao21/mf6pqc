@@ -61,9 +61,7 @@ def _get_pointer(
             "GWE/GWF-GWE/VSC packages are present."
         ) from exc
     if pointer.size != nxyz:
-        raise BackendError(
-            f"{label} has {pointer.size} cells; expected nxyz={nxyz}"
-        )
+        raise BackendError(f"{label} has {pointer.size} cells; expected nxyz={nxyz}")
     return pointer
 
 
@@ -84,9 +82,7 @@ def _validate_positive(values: np.ndarray, label: str) -> np.ndarray:
 def setup_energy_coupling(sim) -> EnergyCouplingBinding:
     """Bind GWE, EST, VSC, and NPF arrays after MODFLOW initialization."""
     if not sim.energy_enabled:
-        raise ConfigurationError(
-            "Thermal coupling requires energy_enabled=True"
-        )
+        raise ConfigurationError("Thermal coupling requires energy_enabled=True")
     temperature_ptr = _get_pointer(
         sim.modflow_api,
         "X",
@@ -114,17 +110,13 @@ def setup_energy_coupling(sim) -> EnergyCouplingBinding:
 
     tolerance = sim.initial_gwe_field_tolerance
     if sim.validate_initial_gwe_fields:
-        if not np.allclose(
-            temperature, sim.temperature, rtol=0.0, atol=tolerance
-        ):
+        if not np.allclose(temperature, sim.temperature, rtol=0.0, atol=tolerance):
             maximum = float(np.max(np.abs(temperature - sim.temperature)))
             raise ConfigurationError(
                 "Initial GWE and PhreeqcRM temperatures differ; maximum "
                 f"absolute difference is {maximum:.6g} degC"
             )
-        if not np.allclose(
-            est_porosity, sim.porosity, rtol=0.0, atol=tolerance
-        ):
+        if not np.allclose(est_porosity, sim.porosity, rtol=0.0, atol=tolerance):
             maximum = float(np.max(np.abs(est_porosity - sim.porosity)))
             raise ConfigurationError(
                 "Initial GWE EST and MF6PQC porosities differ; maximum "
@@ -193,15 +185,9 @@ def setup_energy_coupling(sim) -> EnergyCouplingBinding:
             "NPF effective K33",
         )
         viscosity = _validate_positive(binding.viscosity_ptr, "VSC viscosity")
-        reference_k11 = _validate_positive(
-            binding.reference_k11_ptr, "NPF reference K11"
-        )
-        reference_k22 = _validate_positive(
-            binding.reference_k22_ptr, "NPF reference K22"
-        )
-        reference_k33 = _validate_positive(
-            binding.reference_k33_ptr, "NPF reference K33"
-        )
+        reference_k11 = _validate_positive(binding.reference_k11_ptr, "NPF reference K11")
+        reference_k22 = _validate_positive(binding.reference_k22_ptr, "NPF reference K22")
+        reference_k33 = _validate_positive(binding.reference_k33_ptr, "NPF reference K33")
         _validate_positive(binding.effective_k11_ptr, "NPF effective K11")
         _validate_positive(binding.effective_k22_ptr, "NPF effective K22")
         _validate_positive(binding.effective_k33_ptr, "NPF effective K33")
@@ -209,9 +195,7 @@ def setup_energy_coupling(sim) -> EnergyCouplingBinding:
         binding.k33_to_k11 = reference_k33 / reference_k11
         binding.viscosity_for_flow = viscosity.copy()
         binding.reference_k11_for_flow = reference_k11.copy()
-        binding.effective_k11_for_flow = np.asarray(
-            binding.effective_k11_ptr, dtype=float
-        ).copy()
+        binding.effective_k11_for_flow = np.asarray(binding.effective_k11_ptr, dtype=float).copy()
 
     binding.temperature_for_flow = temperature.copy()
     sim.energy_binding = binding
@@ -255,9 +239,7 @@ def capture_flow_response(sim) -> None:
     if not sim.vsc_enabled:
         return
     binding = sim.energy_binding
-    binding.viscosity_for_flow = _validate_positive(
-        binding.viscosity_ptr, "VSC viscosity"
-    ).copy()
+    binding.viscosity_for_flow = _validate_positive(binding.viscosity_ptr, "VSC viscosity").copy()
     binding.effective_k11_for_flow = _validate_positive(
         binding.effective_k11_ptr, "NPF effective K11"
     ).copy()
@@ -316,14 +298,12 @@ def finalize_energy_results(sim) -> None:
     if not sim.energy_enabled:
         return
     sim.results_temperature = np.asarray(sim.results_temperature, dtype=float)
-    sim.results_temperature_for_flow = np.asarray(
-        sim.results_temperature_for_flow, dtype=float
-    )
+    sim.results_temperature_for_flow = np.asarray(sim.results_temperature_for_flow, dtype=float)
     expected = sim.results.shape[0]
-    if (
-        sim.results_temperature.shape != (expected, sim.nxyz)
-        or sim.results_temperature_for_flow.shape != (expected, sim.nxyz)
-    ):
+    if sim.results_temperature.shape != (
+        expected,
+        sim.nxyz,
+    ) or sim.results_temperature_for_flow.shape != (expected, sim.nxyz):
         raise CouplingError("Thermal outputs do not align with chemistry frames")
     if sim.vsc_enabled:
         sim.results_viscosity = np.asarray(sim.results_viscosity, dtype=float)

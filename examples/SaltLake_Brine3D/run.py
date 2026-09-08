@@ -2,36 +2,37 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import os
-from pathlib import Path
-import sys
 
+import _example_support as _example_support
 import numpy as np
-
+from _example_support import executable_path, library_path, runtime_path
 
 CASE_DIR = Path(__file__).resolve().parent
 REPOSITORY_DIR = CASE_DIR.parents[1]
-sys.path.insert(0, str(REPOSITORY_DIR))
 
-from mf6pqc import MF6PQC  # noqa: E402
-from mf6pqc.permeability import PowerLawUpdater  # noqa: E402
-
-from case_config import (  # noqa: E402
+from modflow_model import (  # noqa: E402
     FACIES_MINERAL_VOLUME_FRACTIONS,
     INITIAL_POROSITY,
     K33_RATIO,
     MINERAL_MOLAR_VOLUMES_L_PER_MOL,
     PROFILES,
+    build_model,  # noqa: E402
     cell_index,
     initial_hydraulic_conductivity,
     initial_porosity,
     kinetic_facies,
     potassium_grade_percent,
 )
-from modflow_model import build_model  # noqa: E402
 
+from mf6pqc import MF6PQC  # noqa: E402
+from mf6pqc.permeability import PowerLawUpdater  # noqa: E402
 
 SCENARIOS = ("feedback", "fixed")
 
@@ -78,9 +79,7 @@ def _component_dictionary(
     values = np.asarray(values, dtype=float).ravel()
     if nxyz is None:
         return {name: float(values[index]) for index, name in enumerate(components)}
-    return {
-        name: float(values[index * nxyz]) for index, name in enumerate(components)
-    }
+    return {name: float(values[index * nxyz]) for index, name in enumerate(components)}
 
 
 def main() -> None:
@@ -95,8 +94,8 @@ def main() -> None:
     if not density_enabled:
         run_label += "_constant_density"
 
-    workspace = CASE_DIR / "simulation" / run_label
-    output_dir = CASE_DIR / "output" / run_label
+    workspace = runtime_path(__file__, "simulation") / run_label
+    output_dir = runtime_path(__file__, "output") / run_label
     porosity = initial_porosity(profile)
     hydraulic_conductivity = initial_hydraulic_conductivity(profile)
     facies = kinetic_facies(profile)
@@ -116,9 +115,7 @@ def main() -> None:
         solution_density_volume=False,
         db_path=str(CASE_DIR.parent / "Hamann2015" / "input_data" / "pitzer.dat"),
         pqi_path=str(CASE_DIR / "input_data" / "input.pqi"),
-        modflow_dll_path=str(
-            REPOSITORY_DIR / "bin" / "mf6.7.0" / "libmf6.dll"
-        ),
+        modflow_dll_path=library_path("mf6.7.0"),
         workspace=str(workspace),
         output_dir=str(output_dir),
         if_update_porosity_K=feedback_enabled,
@@ -150,14 +147,12 @@ def main() -> None:
         # nonnegative, so set its tiny roundoff residual exactly to zero.
         if "Charge" in components:
             charge_index = components.index("Charge")
-            initial[
-                charge_index * profile.nxyz : (charge_index + 1) * profile.nxyz
-            ] = 0.0
+            initial[charge_index * profile.nxyz : (charge_index + 1) * profile.nxyz] = 0.0
             channel[charge_index] = 0.0
 
         build_model(
             workspace=workspace,
-            mf6_executable=REPOSITORY_DIR / "bin" / "mf6.7.0" / "mf6.exe",
+            mf6_executable=executable_path("mf6.7.0"),
             profile=profile,
             species=components,
             initial_concentrations=initial,
@@ -219,21 +214,15 @@ def main() -> None:
                     profile.channel_conductance_per_cell_m2_per_day
                 ),
                 "well_cells": [list(cell) for cell in profile.well_cells],
-                "well_flat_indices": [
-                    cell_index(profile, cell) for cell in profile.well_cells
-                ],
+                "well_flat_indices": [cell_index(profile, cell) for cell in profile.well_cells],
                 "well_rate_each_m3_per_day": profile.well_rate_m3_per_day,
-                "total_pumping_m3_per_day": (
-                    profile.well_count * profile.well_rate_m3_per_day
-                ),
+                "total_pumping_m3_per_day": (profile.well_count * profile.well_rate_m3_per_day),
             },
             "components": components,
             "initial_components_mol_per_litre": _component_dictionary(
                 components, initial, profile.nxyz
             ),
-            "channel_components_mol_per_litre": _component_dictionary(
-                components, channel
-            ),
+            "channel_components_mol_per_litre": _component_dictionary(components, channel),
             "initial_selected_output": initial_selected,
             "initial_porosity": INITIAL_POROSITY,
             "k33_to_k11_ratio": K33_RATIO,
@@ -242,30 +231,22 @@ def main() -> None:
                 "generator": "GSTools Gaussian covariance + SRF",
                 "seed": profile.random_field_seed,
                 "log_standard_deviation": profile.log_k_standard_deviation,
-                "correlation_lengths_xyz_m": list(
-                    profile.k_correlation_lengths_m
-                ),
-                "layer_geometric_means_m_per_day": list(
-                    profile.layer_geometric_mean_k_m_per_day
-                ),
+                "correlation_lengths_xyz_m": list(profile.k_correlation_lengths_m),
+                "layer_geometric_means_m_per_day": list(profile.layer_geometric_mean_k_m_per_day),
             },
             "permeability_exponent": profile.permeability_exponent,
             "permeability_law": (
-                "K_new = K_initial * "
-                f"(phi_new / phi_initial)^{profile.permeability_exponent:g}"
+                f"K_new = K_initial * (phi_new / phi_initial)^{profile.permeability_exponent:g}"
             ),
             "mineral_volume_fractions_by_facies": {
-                str(key): value
-                for key, value in FACIES_MINERAL_VOLUME_FRACTIONS.items()
+                str(key): value for key, value in FACIES_MINERAL_VOLUME_FRACTIONS.items()
             },
             "elemental_K_grade_percent_by_facies": {
                 str(key): potassium_grade_percent(value)
                 for key, value in FACIES_MINERAL_VOLUME_FRACTIONS.items()
             },
             "software_paths": {
-                "database": str(
-                    CASE_DIR.parent / "Hamann2015" / "input_data" / "pitzer.dat"
-                ),
+                "database": str(CASE_DIR.parent / "Hamann2015" / "input_data" / "pitzer.dat"),
                 "chemistry_input": str(CASE_DIR / "input_data" / "input.pqi"),
             },
         }
@@ -284,4 +265,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     main()

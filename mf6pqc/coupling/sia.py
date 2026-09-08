@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import numpy as np
@@ -38,6 +39,8 @@ from mf6pqc.feedback import (
     write_conductivity_for_step,
 )
 from mf6pqc.utils import get_gwt_model_name
+
+_logger = logging.getLogger(__name__)
 
 
 def cache_cell_volume(sim, gwt_model_name: str) -> np.ndarray:
@@ -77,18 +80,10 @@ def build_sia_state(sim) -> SIACouplingState:
     source_rates = np.zeros_like(transported)
     candidate_source_rates = np.zeros_like(transported)
     species_slices = build_species_slices(sim.nxyz, sim.ncomps)
-    source_variables = cache_source_variables(
-        sim.modflow_api, sim.components, sim.nxyz
-    )
-    bulk_volume = cache_cell_volume(
-        sim, get_gwt_model_name(sim.components[0])
-    )
-    previous_density = (
-        get_calculated_density(sim) if sim.if_update_density else None
-    )
-    candidate_density = (
-        previous_density.copy() if previous_density is not None else None
-    )
+    source_variables = cache_source_variables(sim.modflow_api, sim.components, sim.nxyz)
+    bulk_volume = cache_cell_volume(sim, get_gwt_model_name(sim.components[0]))
+    previous_density = get_calculated_density(sim) if sim.if_update_density else None
+    candidate_density = previous_density.copy() if previous_density is not None else None
     return SIACouplingState(
         concentration_variables=concentration_variables,
         species_slices=species_slices,
@@ -113,9 +108,7 @@ def build_sia_state(sim) -> SIACouplingState:
         previous_density=previous_density,
         candidate_density=candidate_density,
         density_difference=(
-            np.zeros_like(previous_density)
-            if previous_density is not None
-            else None
+            np.zeros_like(previous_density) if previous_density is not None else None
         ),
         picard_iteration=0,
         time_step_schedule=build_time_step_schedule(sim.modflow_api),
@@ -126,9 +119,9 @@ def restore_concentrations(state: SIACouplingState) -> None:
     """Restore GWT concentrations to the previous time level."""
     for index, info in enumerate(state.concentration_variables.values()):
         pointer = info["ptr"]
-        pointer[:] = state.previous_time_concentrations[
-            state.species_slices[index]
-        ].reshape(pointer.shape)
+        pointer[:] = state.previous_time_concentrations[state.species_slices[index]].reshape(
+            pointer.shape
+        )
 
 
 def apply_sia_sources(sim, state: SIACouplingState) -> None:
@@ -141,9 +134,7 @@ def apply_sia_sources(sim, state: SIACouplingState) -> None:
         pointer = state.source_variables[component]["ptr"]
         pointer[:] = state.source_rates[species_slice]
         if component != "H2O" and has_water_only_sinks:
-            concentration = np.asarray(
-                state.concentration_variables[component]["ptr"]
-            ).ravel()
+            concentration = np.asarray(state.concentration_variables[component]["ptr"]).ravel()
             pointer[:] += sim.water_only_sink_rates * concentration
 
 
@@ -152,15 +143,10 @@ def solve_modflow_picard(sim, state: SIACouplingState) -> None:
     for solution_id, iteration_pointer in state.solution_iterations.items():
         sim.modflow_api.prepare_solve(solution_id)
         apply_sia_sources(sim, state)
-        if (
-            sim.if_update_density
-            and solution_id == 1
-            and state.candidate_density is not None
-        ):
+        if sim.if_update_density and solution_id == 1 and state.candidate_density is not None:
             state.previous_density = (
-                (1.0 - sim.sia_density_relaxation) * state.previous_density
-                + sim.sia_density_relaxation * state.candidate_density
-            )
+                1.0 - sim.sia_density_relaxation
+            ) * state.previous_density + sim.sia_density_relaxation * state.candidate_density
             sim.density_ptr[:] = state.previous_density
         maximum = int(iteration_pointer[0])
         converged = False
@@ -174,9 +160,7 @@ def solve_modflow_picard(sim, state: SIACouplingState) -> None:
         finally:
             sim.modflow_api.finalize_solve(solution_id)
         if not converged:
-            _record_solver_failure(
-                sim, solution_id, iterations, picard=True
-            )
+            _record_solver_failure(sim, solution_id, iterations, picard=True)
 
 
 def build_reaction_input(state: SIACouplingState, dt: float) -> None:
@@ -191,9 +175,8 @@ def build_reaction_input(state: SIACouplingState, dt: float) -> None:
     """
     if dt <= MIN_TIME_STEP:
         raise CouplingError(f"SIA received a non-positive reaction step: {dt}")
-    if (
-        not np.all(np.isfinite(state.mobile_water_volume))
-        or np.any(state.mobile_water_volume <= 0.0)
+    if not np.all(np.isfinite(state.mobile_water_volume)) or np.any(
+        state.mobile_water_volume <= 0.0
     ):
         raise CouplingError("SIA mobile-water volumes must be finite and positive")
     np.copyto(state.reaction_input, state.transported)
@@ -266,17 +249,14 @@ def update_sources_from_instantaneous_rates(
     concentrations = state.transported.reshape(sim.ncomps, sim.nxyz).copy()
     concentrations.setflags(write=False)
     try:
-        evaluated = evaluator(
-            tuple(sim.components), concentrations, float(target_time)
-        )
+        evaluated = evaluator(tuple(sim.components), concentrations, float(target_time))
     except Exception as exc:
         raise CouplingError("sia_rate_evaluator failed") from exc
     rates = np.asarray(evaluated, dtype=float)
     expected_shape = (sim.ncomps, sim.nxyz)
     if rates.shape != expected_shape:
         raise CouplingError(
-            "sia_rate_evaluator returned shape "
-            f"{rates.shape}; expected {expected_shape}"
+            f"sia_rate_evaluator returned shape {rates.shape}; expected {expected_shape}"
         )
     if not np.all(np.isfinite(rates)):
         raise CouplingError("sia_rate_evaluator returned non-finite rates")
@@ -290,9 +270,7 @@ def update_sources_from_instantaneous_rates(
     )
     np.copyto(state.reacted, state.transported)
     state.coupling_difference.fill(0.0)
-    state.source_rates += (
-        sim.sia_source_relaxation * state.source_difference
-    )
+    state.source_rates += sim.sia_source_relaxation * state.source_difference
     apply_sia_sources(sim, state)
 
 
@@ -307,36 +285,27 @@ def check_picard_convergence(sim, state: SIACouplingState) -> bool:
     if state.picard_iteration == 0:
         return False
     iteration_ok = np.all(
-        state.concentration_difference
-        <= sim.sia_atol + sim.sia_rtol * np.abs(state.transported)
+        state.concentration_difference <= sim.sia_atol + sim.sia_rtol * np.abs(state.transported)
     )
     if not iteration_ok:
         return False
 
-    coupling_scale = np.maximum(
-        np.abs(state.transported), np.abs(state.reacted)
-    )
+    coupling_scale = np.maximum(np.abs(state.transported), np.abs(state.reacted))
     coupling_ok = np.all(
-        np.abs(state.coupling_difference)
-        <= sim.sia_atol + sim.sia_rtol * coupling_scale
+        np.abs(state.coupling_difference) <= sim.sia_atol + sim.sia_rtol * coupling_scale
     )
     if not coupling_ok:
         return False
 
     if state.density_difference is not None:
-        density_scale = np.maximum(
-            np.abs(state.candidate_density), np.abs(state.previous_density)
-        )
+        density_scale = np.maximum(np.abs(state.candidate_density), np.abs(state.previous_density))
         density_ok = np.all(
-            np.abs(state.density_difference)
-            <= sim.sia_atol + sim.sia_rtol * density_scale
+            np.abs(state.density_difference) <= sim.sia_atol + sim.sia_rtol * density_scale
         )
         if not density_ok:
             return False
 
-    absolute_rate_tolerance = (
-        sim.sia_atol * state.mobile_water_volume / state.current_dt
-    )
+    absolute_rate_tolerance = sim.sia_atol * state.mobile_water_volume / state.current_dt
     return all(
         np.all(
             np.abs(state.source_difference[species_slice])
@@ -357,18 +326,12 @@ def check_picard_convergence(sim, state: SIACouplingState) -> bool:
 def picard_residual_summary(state: SIACouplingState) -> dict[str, float]:
     """Return compact absolute residual diagnostics for the current iterate."""
     summary = {
-        "max_iteration_concentration": float(
-            np.max(np.abs(state.concentration_difference))
-        ),
-        "max_transport_reaction_closure": float(
-            np.max(np.abs(state.coupling_difference))
-        ),
+        "max_iteration_concentration": float(np.max(np.abs(state.concentration_difference))),
+        "max_transport_reaction_closure": float(np.max(np.abs(state.coupling_difference))),
         "max_source_rate": float(np.max(np.abs(state.source_difference))),
     }
     if state.density_difference is not None:
-        summary["max_density"] = float(
-            np.max(np.abs(state.density_difference))
-        )
+        summary["max_density"] = float(np.max(np.abs(state.density_difference)))
     return summary
 
 
@@ -388,9 +351,7 @@ def run_picard_iteration(
         sim.signed_components,
     )
     if sim.sia_rate_evaluator is not None:
-        update_sources_from_instantaneous_rates(
-            sim, state, reaction_start_time + dt
-        )
+        update_sources_from_instantaneous_rates(sim, state, reaction_start_time + dt)
     else:
         build_reaction_input(state, dt)
         enforce_component_domains(
@@ -400,9 +361,7 @@ def run_picard_iteration(
             sim.signed_components,
         )
         sim.phreeqc_rm.StateApply(1)
-        run_reaction_step(
-            sim, state.reaction_input, state.reacted, reaction_start_time, dt
-        )
+        run_reaction_step(sim, state.reaction_input, state.reacted, reaction_start_time, dt)
         if sim.if_update_density:
             if not sim.use_phreeqc_calculated_density:
                 update_selected_output(sim)
@@ -426,9 +385,7 @@ def run_picard_iteration(
     return False
 
 
-def run_picard_loop(
-    sim, state: SIACouplingState, reaction_start_time: float, dt: float
-) -> int:
+def run_picard_loop(sim, state: SIACouplingState, reaction_start_time: float, dt: float) -> int:
     """Iterate transport/reaction source correction to configured tolerances."""
     for iteration in range(sim.sia_max_iterations):
         state.picard_iteration = iteration
@@ -445,10 +402,8 @@ def run_picard_loop(
             return count
     residuals = picard_residual_summary(state)
     closure_by_component = {
-        component: float(
-            np.max(np.abs(state.coupling_difference[species_slice]))
-        )
-        for component, species_slice in zip(sim.components, state.species_slices)
+        component: float(np.max(np.abs(state.coupling_difference[species_slice])))
+        for component, species_slice in zip(sim.components, state.species_slices, strict=False)
     }
     worst_component = max(closure_by_component, key=closure_by_component.get)
     failure = {
@@ -470,7 +425,7 @@ def run_picard_loop(
     )
     if sim.sia_fail_on_nonconvergence:
         raise ConvergenceError(message)
-    print(f"Warning: {message}")
+    _logger.warning(message)
     # Continuing is a legacy, non-strict policy.  Keep the two backends on the
     # same last reaction endpoint even though the transport residual is above
     # tolerance; the recorded diagnostics make that degradation explicit.
@@ -482,17 +437,11 @@ def run_picard_loop(
     return sim.sia_max_iterations
 
 
-def update_sia_after_step(
-    sim, state: SIACouplingState, picard_iterations: int
-) -> None:
+def update_sia_after_step(sim, state: SIACouplingState, picard_iterations: int) -> None:
     """Commit diagnostics and medium feedback after a converged SIA step."""
     update_selected_output(sim)
-    state.current_k11 = update_medium_properties(
-        sim, state.current_k11, state.logical_step
-    )
-    state.mobile_water_volume = (
-        state.bulk_cell_volume * sim.porosity * sim.saturation
-    )
+    state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
+    state.mobile_water_volume = state.bulk_cell_volume * sim.porosity * sim.saturation
     save_time_step_results(sim, state.logical_step, state.current_time)
     sim.sia_iterations.append(picard_iterations)
     state.logical_step += 1
@@ -560,7 +509,7 @@ def run_sia(sim) -> None:
     """Run source-based sequential iterative coupling to the TDIS end time."""
     validate_setup(sim)
     initialize_modflow6(sim)
-    print("\n--- Starting reactive transport simulation (SIA) ---")
+    _logger.info("\n--- Starting reactive transport simulation (SIA) ---")
     start = time.perf_counter()
     state = build_sia_state(sim)
     while simulation_has_time_remaining(state.current_time, state.end_time):

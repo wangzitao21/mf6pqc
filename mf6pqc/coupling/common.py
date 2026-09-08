@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -10,13 +11,14 @@ import numpy as np
 from mf6pqc.constants import (
     DENSITY_SCALE,
     MIN_CONCENTRATION,
-    MIN_TIME_STEP,
     SECONDS_PER_DAY,
 )
 from mf6pqc.coupling.state import StandardCouplingState
 from mf6pqc.exceptions import BackendError, ConvergenceError, CouplingError
 from mf6pqc.feedback import prepare_feedback
 from mf6pqc.utils import get_gwt_model_name, get_species_slice
+
+_logger = logging.getLogger(__name__)
 
 
 def validate_setup(sim) -> None:
@@ -39,7 +41,7 @@ def cache_basic_geometry(sim) -> None:
             f"top={sim.top_arr.size}, bottom={sim.botm_arr.size}, nxyz={sim.nxyz}"
         )
     sim.cell_thick = sim.top_arr - sim.botm_arr
-    if np.any(sim.cell_thick <= 0.0):
+    if not np.all(np.isfinite(sim.cell_thick)) or np.any(sim.cell_thick <= 0.0):
         raise BackendError("GWF contains cells with non-positive thickness")
 
 
@@ -69,7 +71,7 @@ def cache_concentration_variables(
             "ptr": pointer,
             "shape": pointer.shape,
         }
-        print(f"  - solute '{component}', shape={pointer.shape}")
+        _logger.info(f"  - solute '{component}', shape={pointer.shape}")
     return variables
 
 
@@ -83,16 +85,12 @@ def cache_solution_iterations(modflow_api) -> dict[int, np.ndarray]:
         address = modflow_api.get_var_address("MXITER", f"SLN_{solution_id}")
         pointer = modflow_api.get_value_ptr(address)
         if pointer.size < 1 or int(pointer[0]) <= 0:
-            raise BackendError(
-                f"Invalid MXITER for MODFLOW solution {solution_id}: {pointer!r}"
-            )
+            raise BackendError(f"Invalid MXITER for MODFLOW solution {solution_id}: {pointer!r}")
         iterations[solution_id] = pointer
     return iterations
 
 
-def allocate_concentration_buffers(
-    nxyz: int, ncomps: int
-) -> tuple[np.ndarray, np.ndarray]:
+def allocate_concentration_buffers(nxyz: int, ncomps: int) -> tuple[np.ndarray, np.ndarray]:
     """Allocate transport and reaction buffers in component-major layout."""
     if nxyz <= 0 or ncomps <= 0:
         raise ValueError("nxyz and ncomps must be positive")
@@ -116,7 +114,7 @@ def build_time_step_schedule(modflow_api) -> np.ndarray:
     ).ravel()
     nstp = np.asarray(
         modflow_api.get_value(modflow_api.get_var_address("NSTP", "TDIS")),
-        dtype=np.int64,
+        dtype=float,
     ).ravel()
     tsmult = np.asarray(
         modflow_api.get_value(modflow_api.get_var_address("TSMULT", "TDIS")),
@@ -128,7 +126,9 @@ def build_time_step_schedule(modflow_api) -> np.ndarray:
         raise BackendError("TDIS contains no stress periods")
 
     periods: list[np.ndarray] = []
-    for period_length, step_count_raw, multiplier in zip(perlen, nstp, tsmult):
+    for period_length, step_count_raw, multiplier in zip(perlen, nstp, tsmult, strict=False):
+        if not np.isfinite(step_count_raw) or step_count_raw != np.floor(step_count_raw):
+            raise BackendError("TDIS NSTP must contain finite integer step counts")
         step_count = int(step_count_raw)
         if (
             not np.isfinite(period_length)
@@ -140,7 +140,7 @@ def build_time_step_schedule(modflow_api) -> np.ndarray:
             raise ValueError(
                 "TDIS period lengths, step counts, and multipliers must be finite and positive"
             )
-        if np.isclose(multiplier, 1.0):
+        if multiplier == 1.0:
             steps = np.full(step_count, period_length / step_count, dtype=float)
         else:
             # Normalizing geometric weights avoids overflow in multiplier**nstp
@@ -224,7 +224,7 @@ def enforce_component_domains(
     if len(components) != len(species_slices):
         raise ValueError("components and species_slices must have equal length")
     signed = {component.casefold() for component in signed_components}
-    for component, component_slice in zip(components, species_slices):
+    for component, component_slice in zip(components, species_slices, strict=False):
         if component.casefold() in signed:
             continue
         np.maximum(
@@ -249,9 +249,7 @@ def run_reaction_step(
     distinction is essential for RATES definitions that use ``TOTAL_TIME``.
     """
     if not np.isfinite(start_time):
-        raise CouplingError(
-            f"Reaction start time must be finite: {start_time}"
-        )
+        raise CouplingError(f"Reaction start time must be finite: {start_time}")
     if dt < 0.0 or not np.isfinite(dt):
         raise CouplingError(f"Reaction time step must be finite and nonnegative: {dt}")
     if not np.all(np.isfinite(transported)):
@@ -282,9 +280,7 @@ def get_calculated_density(sim) -> np.ndarray:
         density = np.asarray(sim.selected_output[-1], dtype=float)
     density = density.ravel()
     if density.size != sim.nxyz:
-        raise BackendError(
-            f"Chemistry density has {density.size} cells; expected {sim.nxyz}"
-        )
+        raise BackendError(f"Chemistry density has {density.size} cells; expected {sim.nxyz}")
     density = density * DENSITY_SCALE
     if not np.all(np.isfinite(density)) or np.any(density <= 0.0):
         raise CouplingError("Chemistry produced non-positive or non-finite density")
@@ -294,16 +290,12 @@ def get_calculated_density(sim) -> np.ndarray:
 def update_selected_output(sim) -> None:
     """Refresh and validate the selected-output matrix."""
     raw = np.asarray(sim.phreeqc_rm.GetSelectedOutput(), dtype=float)
-    if raw.size % sim.nxyz != 0:
-        raise BackendError(
-            "Selected output size is not divisible by nxyz: "
-            f"{raw.size} values for {sim.nxyz} cells"
-        )
+    expected = len(sim.headings) * sim.nxyz
+    if raw.size != expected:
+        raise BackendError(f"Selected output size changed: {raw.size} values; expected {expected}")
     sim.selected_output = raw.reshape(-1, sim.nxyz)
     if not np.all(np.isfinite(sim.selected_output)):
         raise CouplingError("PhreeqcRM selected output contains non-finite values")
-    if sim.if_update_density and sim.use_phreeqc_calculated_density:
-        sim.selected_output[-1] = get_calculated_density(sim) / DENSITY_SCALE
 
 
 def synchronize_phreeqcrm_solution(
@@ -339,14 +331,10 @@ def cache_source_variables(
     """Cache live GWT SRC mass-rate arrays for chemical components."""
     variables: dict[str, dict[str, Any]] = {}
     for component in components:
-        address = modflow_api.get_var_address(
-            "SMASSRATE", get_gwt_model_name(component), "SRC"
-        )
+        address = modflow_api.get_var_address("SMASSRATE", get_gwt_model_name(component), "SRC")
         pointer = modflow_api.get_value_ptr(address)
         if nxyz is not None and pointer.size != nxyz:
-            raise BackendError(
-                f"SRC for {component!r} has {pointer.size} cells; expected {nxyz}"
-            )
+            raise BackendError(f"SRC for {component!r} has {pointer.size} cells; expected {nxyz}")
         variables[component] = {"ptr": pointer}
     return variables
 
@@ -378,7 +366,7 @@ def _record_solver_failure(sim, solution_id: int, iterations: int, *, picard: bo
     )
     if sim.fail_on_nonconvergence:
         raise ConvergenceError(message)
-    print(f"Warning: {message}")
+    _logger.warning(message)
 
 
 def solve_modflow_solutions(
@@ -403,9 +391,7 @@ def solve_modflow_solutions(
         finally:
             sim.modflow_api.finalize_solve(solution_id)
         if not converged:
-            _record_solver_failure(
-                sim, solution_id, iterations, picard=False
-            )
+            _record_solver_failure(sim, solution_id, iterations, picard=False)
 
 
 def should_save_time_step(sim, logical_step: int) -> bool:
@@ -424,9 +410,7 @@ def should_run_reaction(sim, logical_step: int) -> bool:
     return (logical_step + 1) in sim.reaction_steps
 
 
-def save_time_step_results(
-    sim, logical_step: int, current_time: float | None = None
-) -> None:
+def save_time_step_results(sim, logical_step: int, current_time: float | None = None) -> None:
     """Store a copy of selected output when the output schedule requests it."""
     if should_save_time_step(sim, logical_step):
         sim.results.append(sim.selected_output.copy())
@@ -444,10 +428,7 @@ def log_progress(
     """Print progress after the first step and then every ``interval`` steps."""
     if completed_steps == 1 or completed_steps % interval == 0:
         extra = f", {suffix}" if suffix else ""
-        print(
-            f"  t = {current_time:.2f}/{end_time:.2f} days, "
-            f"step={completed_steps}{extra}"
-        )
+        _logger.info(f"  t = {current_time:.2f}/{end_time:.2f} days, step={completed_steps}{extra}")
 
 
 def build_standard_state(sim) -> StandardCouplingState:
@@ -461,9 +442,7 @@ def build_standard_state(sim) -> StandardCouplingState:
     species_slices = build_species_slices(sim.nxyz, sim.ncomps)
     water_sink_sources = None
     if sim.has_water_only_sinks:
-        water_sink_sources = cache_source_variables(
-            sim.modflow_api, sim.components, sim.nxyz
-        )
+        water_sink_sources = cache_source_variables(sim.modflow_api, sim.components, sim.nxyz)
     time_step_schedule = build_time_step_schedule(sim.modflow_api)
     if sim.reaction_steps is not None:
         final_step = int(time_step_schedule.size)
@@ -474,12 +453,9 @@ def build_standard_state(sim) -> StandardCouplingState:
             )
         if final_step not in sim.reaction_steps:
             raise CouplingError(
-                "reaction_steps must include the final MODFLOW transport step "
-                f"({final_step})"
+                f"reaction_steps must include the final MODFLOW transport step ({final_step})"
             )
-        if sim.save_steps is not None and not sim.save_steps.issubset(
-            sim.reaction_steps
-        ):
+        if sim.save_steps is not None and not sim.save_steps.issubset(sim.reaction_steps):
             raise CouplingError(
                 "save_steps must be a subset of reaction_steps because selected "
                 "chemical output is refreshed only when chemistry runs"
@@ -523,9 +499,7 @@ def finalize_results(sim, logical_steps: int, start_wall_time: float) -> None:
     sim.final_time_step_index = logical_steps
     elapsed = time.perf_counter() - start_wall_time
     sim.last_run_wall_time_seconds = elapsed
-    print(
-        f"--- Simulation finished, steps={logical_steps}, time={elapsed:.2f} s ---"
-    )
+    _logger.info(f"--- Simulation finished, steps={logical_steps}, time={elapsed:.2f} s ---")
 
 
 # Historical internal names retained for compatibility.

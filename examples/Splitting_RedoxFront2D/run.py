@@ -1,21 +1,21 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import csv
 import json
-import os
-from pathlib import Path
 import subprocess
-import sys
 
+import _example_support as _example_support
 import numpy as np
+from _example_support import library_path, runtime_path
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXAMPLE_DIR.parents[1]
-sys.path.insert(0, str(REPO_ROOT))
 
-from mf6pqc import MF6PQC
-from mf6pqc.utils import get_gwt_model_name
 from modflow_model import (
     LENS_OXIDANT_CAPACITY,
     MATRIX_OXIDANT_CAPACITY,
@@ -25,6 +25,8 @@ from modflow_model import (
     reactive_lens_mask,
 )
 
+from mf6pqc import MF6PQC
+from mf6pqc.utils import get_gwt_model_name
 
 NROW = 10
 NCOL = 20
@@ -49,7 +51,9 @@ SIA_SOURCE_RELAXATION = 0.85
 
 
 def _run_paths(label: str) -> tuple[Path, Path]:
-    return EXAMPLE_DIR / "simulation" / label, EXAMPLE_DIR / "output" / "runs" / label
+    return runtime_path(__file__, "simulation") / label, runtime_path(
+        __file__, "output"
+    ) / "runs" / label
 
 
 def _kinetics_zones() -> np.ndarray:
@@ -68,15 +72,9 @@ def run_realization(
         porosity=POROSITY,
         saturation=1.0,
         temperature=20.0,
-        db_path=str(
-            REPO_ROOT
-            / "examples"
-            / "PHT3D_E01"
-            / "input_data"
-            / "phreeqc.dat"
-        ),
+        db_path=str(REPO_ROOT / "examples" / "PHT3D_E01" / "input_data" / "phreeqc.dat"),
         pqi_path=str(EXAMPLE_DIR / "input_data" / "input.pqi"),
-        modflow_dll_path=str(REPO_ROOT / "bin" / "mf6.7.0" / "libmf6.dll"),
+        modflow_dll_path=library_path("mf6.7.0"),
         workspace=str(workspace),
         output_dir=str(output_dir),
         progress_interval=100,
@@ -87,9 +85,7 @@ def run_realization(
         sia_fail_on_nonconvergence=True,
     )
     try:
-        initial = simulator.setup(
-            {"solution": 0, "kinetics": _kinetics_zones()}
-        )
+        initial = simulator.setup({"solution": 0, "kinetics": _kinetics_zones()})
         pulse = simulator.get_initial_concentrations(1)
         background = simulator.get_initial_concentrations(0)
         components = simulator.get_components()
@@ -121,21 +117,16 @@ def run_realization(
                 simulator.modflow_api.get_value(address), dtype=float
             ).reshape(NROW, NCOL)
         heading_lookup = {
-            heading.casefold(): index
-            for index, heading in enumerate(simulator.headings)
+            heading.casefold(): index for index, heading in enumerate(simulator.headings)
         }
         try:
             extent_index = heading_lookup["redox_extent"]
         except KeyError as exc:
-            raise RuntimeError(
-                "Selected output must contain the Redox_extent heading"
-            ) from exc
-        fields["Extent"] = np.asarray(
-            simulator.selected_output[extent_index], dtype=float
-        ).reshape(NROW, NCOL)
-        sia_iterations = (
-            int(np.sum(simulator.sia_iterations)) if method == "SIA" else None
+            raise RuntimeError("Selected output must contain the Redox_extent heading") from exc
+        fields["Extent"] = np.asarray(simulator.selected_output[extent_index], dtype=float).reshape(
+            NROW, NCOL
         )
+        sia_iterations = int(np.sum(simulator.sia_iterations)) if method == "SIA" else None
         logical_step_count = int(sum(logical_steps))
         metadata = {
             "label": label,
@@ -220,14 +211,10 @@ def field_error_metrics(
         difference = fields[field_name] - reference[field_name]
         scale = FIELD_SCALES[field_name]
         metrics[f"{field_name}_rmse"] = float(np.sqrt(np.mean(difference**2)))
-        metrics[f"{field_name}_nrmse"] = float(
-            np.sqrt(np.mean((difference / scale) ** 2))
-        )
+        metrics[f"{field_name}_nrmse"] = float(np.sqrt(np.mean((difference / scale) ** 2)))
         metrics[f"{field_name}_linf"] = float(np.max(np.abs(difference)))
         normalized_differences.append((difference / scale).ravel())
-    metrics["combined_nrmse"] = float(
-        np.sqrt(np.mean(np.concatenate(normalized_differences) ** 2))
-    )
+    metrics["combined_nrmse"] = float(np.sqrt(np.mean(np.concatenate(normalized_differences) ** 2)))
     return metrics
 
 
@@ -248,22 +235,14 @@ def plume_diagnostics(fields: dict[str, np.ndarray]) -> dict[str, float]:
     )
     lens = reactive_lens_mask(NROW, NCOL)
     lens_extent_fraction = (
-        float(np.sum(extent[lens]) / np.sum(extent))
-        if np.sum(extent) > 0.0
-        else 0.0
+        float(np.sum(extent[lens]) / np.sum(extent)) if np.sum(extent) > 0.0 else 0.0
     )
-    active_area = float(
-        np.count_nonzero((donor > 5.0e-5) & (extent > 1.0e-6)) * delr * delc
-    )
-    depleted_area = float(
-        np.count_nonzero(extent / capacity >= 0.90) * delr * delc
-    )
+    active_area = float(np.count_nonzero((donor > 5.0e-5) & (extent > 1.0e-6)) * delr * delc)
+    depleted_area = float(np.count_nonzero(extent / capacity >= 0.90) * delr * delc)
     return {
         "aqueous_donor_mol": donor_mass,
         "summed_oxidant_consumption_model_mol": float(np.sum(extent)),
-        "oxidant_capacity_utilization_fraction": float(
-            np.sum(extent) / np.sum(capacity)
-        ),
+        "oxidant_capacity_utilization_fraction": float(np.sum(extent) / np.sum(capacity)),
         "donor_centroid_x_m": centroid,
         "reaction_extent_fraction_in_lens": lens_extent_fraction,
         "overlap_area_m2": active_area,
@@ -276,9 +255,7 @@ def _write_metrics(rows: list[dict], output_dir: Path) -> None:
         json.dumps(rows, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     fieldnames = sorted({key for row in rows for key in row})
-    with (output_dir / "comparison_metrics.csv").open(
-        "w", newline="", encoding="utf-8"
-    ) as stream:
+    with (output_dir / "comparison_metrics.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
@@ -286,22 +263,18 @@ def _write_metrics(rows: list[dict], output_dir: Path) -> None:
 
 def run_comparison() -> None:
     """Run three coarse algorithms and an independently refined reference."""
-    output_dir = EXAMPLE_DIR / "output"
+    output_dir = runtime_path(__file__, "output")
     output_dir.mkdir(parents=True, exist_ok=True)
     fields: dict[str, dict[str, np.ndarray]] = {}
     work: dict[str, dict] = {}
     for method in METHODS:
-        fields[method], work[method] = _launch(
-            method, COARSE_STEPS, f"coarse_{method.lower()}"
-        )
+        fields[method], work[method] = _launch(method, COARSE_STEPS, f"coarse_{method.lower()}")
         _validate_fields(method, fields[method])
     fields["ReferenceCheck"], work["ReferenceCheck"] = _launch(
         "Strang", REFERENCE_CHECK_STEPS, "reference_check_strang"
     )
     _validate_fields("ReferenceCheck", fields["ReferenceCheck"])
-    fields["Reference"], work["Reference"] = _launch(
-        "Strang", REFERENCE_STEPS, "reference_strang"
-    )
+    fields["Reference"], work["Reference"] = _launch("Strang", REFERENCE_STEPS, "reference_strang")
     _validate_fields("Reference", fields["Reference"])
     fields["ReferenceCrossCheck"], work["ReferenceCrossCheck"] = _launch(
         "SNIA", REFERENCE_STEPS, "reference_crosscheck_snia"
@@ -351,26 +324,12 @@ def run_comparison() -> None:
     lens = reactive_lens_mask(NROW, NCOL)
     archive.update(
         {
-            "hydraulic_conductivity_m_per_day": hydraulic_conductivity_field(
-                NROW, NCOL
-            ),
+            "hydraulic_conductivity_m_per_day": hydraulic_conductivity_field(NROW, NCOL),
             "reactive_lens_mask": lens.astype(np.uint8),
-            "solid_oxidant_capacity_model_mol": oxidant_capacity_field(
-                NROW, NCOL
-            ),
-            "kinetic_rate_per_day": np.full(
-                (NROW, NCOL), KINETIC_RATE_PER_DAY, dtype=float
-            ),
-            "x_cell_centers_m": (
-                np.arange(NCOL, dtype=float) + 0.5
-            )
-            * LENGTH
-            / NCOL,
-            "y_cell_centers_m": (
-                np.arange(NROW, dtype=float) + 0.5
-            )
-            * WIDTH
-            / NROW,
+            "solid_oxidant_capacity_model_mol": oxidant_capacity_field(NROW, NCOL),
+            "kinetic_rate_per_day": np.full((NROW, NCOL), KINETIC_RATE_PER_DAY, dtype=float),
+            "x_cell_centers_m": (np.arange(NCOL, dtype=float) + 0.5) * LENGTH / NCOL,
+            "y_cell_centers_m": (np.arange(NROW, dtype=float) + 0.5) * WIDTH / NROW,
             "domain_extent_m": np.array([0.0, LENGTH, 0.0, WIDTH]),
         }
     )
@@ -378,15 +337,9 @@ def run_comparison() -> None:
     _write_metrics(rows, output_dir)
 
     row_lookup = {row["label"]: row for row in rows}
-    coarse_errors = {
-        method: row_lookup[method]["combined_nrmse"] for method in METHODS
-    }
-    transport_work = {
-        method: row_lookup[method]["transport_solves"] for method in METHODS
-    }
-    wall_times = {
-        method: row_lookup[method]["wall_time_seconds"] for method in METHODS
-    }
+    coarse_errors = {method: row_lookup[method]["combined_nrmse"] for method in METHODS}
+    transport_work = {method: row_lookup[method]["transport_solves"] for method in METHODS}
+    wall_times = {method: row_lookup[method]["wall_time_seconds"] for method in METHODS}
     sia_diagnostics = work["SIA"]["sia_diagnostics"]
     validation = {
         "benchmark_claim": "SIA < Strang < SNIA error at reversed work cost",
@@ -400,20 +353,14 @@ def run_comparison() -> None:
         "observed_wall_time_has_expected_order": bool(
             wall_times["SIA"] > wall_times["Strang"] > wall_times["SNIA"]
         ),
-        "reference_check_combined_nrmse": row_lookup["ReferenceCheck"][
-            "combined_nrmse"
-        ],
-        "cross_method_reference_nrmse": row_lookup[
-            "ReferenceCrossCheck"
-        ]["combined_nrmse"],
+        "reference_check_combined_nrmse": row_lookup["ReferenceCheck"]["combined_nrmse"],
+        "cross_method_reference_nrmse": row_lookup["ReferenceCrossCheck"]["combined_nrmse"],
         "reference_method": "Strang",
         "reference_step_days": 0.125,
         "reference_check_step_days": 0.25,
         "sia_all_steps_converged": bool(sia_diagnostics)
         and all(item["converged"] for item in sia_diagnostics),
-        "sia_step_iterations": [
-            int(item["iterations"]) for item in sia_diagnostics
-        ],
+        "sia_step_iterations": [int(item["iterations"]) for item in sia_diagnostics],
         "scenario": {
             "pulse_duration_days": PULSE_DURATION,
             "flush_duration_days": FLUSH_DURATION,
@@ -435,29 +382,19 @@ def run_comparison() -> None:
             f"Don mass={row['aqueous_donor_mol']:.4e} mol, "
             f"extent sum={row['summed_oxidant_consumption_model_mol']:.4e}"
         )
-    if not (
-        coarse_errors["SIA"]
-        < coarse_errors["Strang"]
-        < coarse_errors["SNIA"]
-    ):
+    if not (coarse_errors["SIA"] < coarse_errors["Strang"] < coarse_errors["SNIA"]):
         raise AssertionError("Expected combined NRMSE order SIA < Strang < SNIA")
-    if not (
-        transport_work["SIA"]
-        > transport_work["Strang"]
-        > transport_work["SNIA"]
-    ):
+    if not (transport_work["SIA"] > transport_work["Strang"] > transport_work["SNIA"]):
         raise AssertionError("Expected transport-work order SIA > Strang > SNIA")
     if not validation["sia_all_steps_converged"]:
         raise AssertionError("At least one strict SIA logical step did not converge")
     if validation["reference_check_combined_nrmse"] > 0.005:
         raise AssertionError(
-            "The 0.25-day Strang reference check differs too much from the "
-            "0.125-day reference"
+            "The 0.25-day Strang reference check differs too much from the 0.125-day reference"
         )
     if validation["cross_method_reference_nrmse"] > 0.005:
         raise AssertionError(
-            "The 0.125-day SNIA cross-check differs too much from the "
-            "0.125-day Strang reference"
+            "The 0.125-day SNIA cross-check differs too much from the 0.125-day Strang reference"
         )
     print(
         "Two-dimensional splitting validation passed; execute plot.ipynb "
@@ -466,12 +403,13 @@ def run_comparison() -> None:
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument("--method", choices=METHODS)
     parser.add_argument("--steps", type=int, nargs=2, metavar=("PULSE", "FLUSH"))
     parser.add_argument("--label")
     arguments = parser.parse_args()
-    os.chdir(REPO_ROOT)
+
     if arguments.method:
         if arguments.steps is None or arguments.label is None:
             parser.error("--method requires --steps and --label")

@@ -1,17 +1,18 @@
-import numpy as np
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import _example_support as _example_support
 import flopy
+import numpy as np
+from _example_support import executable_path
+
 
 def transport_model(
-    sim_ws=None,
-    perlen=1100, 
-    nstp=55, 
-    bc=None,
-    bc_0=None,
-    species_list=None, 
-    initial_conc=None
+    sim_ws=None, perlen=1100, nstp=55, bc=None, bc_0=None, species_list=None, initial_conc=None
 ):
 
-    sim_name = 'model'
+    sim_name = "model"
 
     Lx = 510.0
     Ly = 310.0
@@ -26,52 +27,45 @@ def transport_model(
 
     top = 10.0
     botm = 0.0
-    
+
     hk = 50.0
-    
+
     nper = 1
     perlen = np.array([perlen])
     nstp = [nstp]
 
     gwfname = f"gwf_{sim_name}"
-    
+
     sim = flopy.mf6.MFSimulation(
-        sim_name=gwfname,
-        sim_ws=sim_ws,
-        exe_name='./bin/mf6.7.0/mf.exe',
-        verbosity_level=0
+        sim_name=gwfname, sim_ws=sim_ws, exe_name=executable_path("mf6.7.0"), verbosity_level=0
     )
-    
+
     flopy.mf6.ModflowTdis(
-        sim,
-        pname='tdis',
-        time_units='DAYS',
-        nper=nper,
-        perioddata=[(perlen[0], nstp[0], 1.0)]
+        sim, pname="tdis", time_units="DAYS", nper=nper, perioddata=[(perlen[0], nstp[0], 1.0)]
     )
-    
+
     gwf = flopy.mf6.ModflowGwf(sim, modelname=gwfname, save_flows=True)
-    
+
     ims = flopy.mf6.ModflowIms(
         sim,
-        pname='ims',
-        complexity='SIMPLE',
+        pname="ims",
+        complexity="SIMPLE",
         outer_dvclose=1.0e-6,
         outer_maximum=500,
-        under_relaxation='NONE',
+        under_relaxation="NONE",
         inner_maximum=300,
         inner_dvclose=1.0e-9,
         rcloserecord=1.0e-6,
-        linear_acceleration='CG',
-        scaling_method='NONE',
-        reordering_method='NONE',
-        relaxation_factor=0.97
+        linear_acceleration="CG",
+        scaling_method="NONE",
+        reordering_method="NONE",
+        relaxation_factor=0.97,
     )
     sim.register_ims_package(ims, [gwf.name])
 
     flopy.mf6.ModflowGwfdis(
         gwf,
-        pname='dis',
+        pname="dis",
         nlay=nlay,
         nrow=nrow,
         ncol=ncol,
@@ -81,65 +75,57 @@ def transport_model(
         botm=botm,
         idomain=1,
     )
-    
-    strt = np.broadcast_to(
-        np.linspace(100.0, 99.0, ncol), (nlay, nrow, ncol)
-    ).copy()
-    flopy.mf6.ModflowGwfic(gwf, pname='ic', strt=strt)
-    
-    flopy.mf6.ModflowGwfnpf(
-        gwf,
-        pname='npf',
-        save_flows=True,
-        icelltype=0,
-        k=hk
-    )
-    
+
+    strt = np.broadcast_to(np.linspace(100.0, 99.0, ncol), (nlay, nrow, ncol)).copy()
+    flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=strt)
+
+    flopy.mf6.ModflowGwfnpf(gwf, pname="npf", save_flows=True, icelltype=0, k=hk)
+
     # The official MODFLOW-2000 flow problem is steady state, so no STO
     # package is required.
-    
+
     chd_spd_1 = []
     for i in range(nrow):
-        chd_spd_1.append([0, i, 0,      100.0, *bc_0])
+        chd_spd_1.append([0, i, 0, 100.0, *bc_0])
     flopy.mf6.ModflowGwfchd(
         gwf,
-        pname='chd-1',
+        pname="chd-1",
         save_flows=True,
         maxbound=len(chd_spd_1),
         stress_period_data={0: chd_spd_1},
         auxiliary=species_list,
-        filename=f"{gwfname}.1.chd"
+        filename=f"{gwfname}.1.chd",
     )
 
     chd_spd_2 = []
     for i in range(nrow):
-        chd_spd_2.append([0, i, ncol-1, 99.0])
+        chd_spd_2.append([0, i, ncol - 1, 99.0])
     flopy.mf6.ModflowGwfchd(
         gwf,
-        pname='chd-2',
+        pname="chd-2",
         save_flows=True,
         maxbound=len(chd_spd_2),
         stress_period_data={0: chd_spd_2},
-        filename=f"{gwfname}.2.chd"
+        filename=f"{gwfname}.2.chd",
     )
 
     wel_spd = [[(0, 15, 15), 2.0, *bc]]
     flopy.mf6.ModflowGwfwel(
         gwf,
-        pname='WEL-1',
+        pname="WEL-1",
         save_flows=True,
         maxbound=len(wel_spd),
         stress_period_data={0: wel_spd},
-        auxiliary=species_list
+        auxiliary=species_list,
     )
 
     flopy.mf6.ModflowGwfoc(
         gwf,
-        pname='oc',
-        budget_filerecord=f'{gwfname}.bud',
-        head_filerecord=f'{gwfname}.hds',
-        saverecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')],
-        printrecord=[('HEAD', 'LAST'), ('BUDGET', 'LAST')]
+        pname="oc",
+        budget_filerecord=f"{gwfname}.bud",
+        head_filerecord=f"{gwfname}.hds",
+        saverecord=[("HEAD", "LAST"), ("BUDGET", "LAST")],
+        printrecord=[("HEAD", "LAST"), ("BUDGET", "LAST")],
     )
 
     # Create one transport model for every PhreeqcRM component.
@@ -165,65 +151,52 @@ def transport_model(
         hclose, rclose, relax = 1e-6, 1e-6, 0.97
         porosity = 0.3
         alh = 10.0
-        ath1 =  alh * 0.3
+        ath1 = alh * 0.3
         atv = alh * 0.1
         diffc = 0.0
-        
+
         gwtname = f"gwt_{species_name}_{sim.name.split('_')[1]}"
-        
+
         gwt = flopy.mf6.ModflowGwt(
-            sim, 
-            modelname=gwtname, 
-            save_flows=True,         
-            model_nam_file=f"{gwtname}.nam"
+            sim, modelname=gwtname, save_flows=True, model_nam_file=f"{gwtname}.nam"
         )
-        
+
         imsgwt = flopy.mf6.ModflowIms(
-            sim, 
-            print_option="SUMMARY", 
-            outer_dvclose=hclose, 
+            sim,
+            print_option="SUMMARY",
+            outer_dvclose=hclose,
             outer_maximum=nouter,
-            under_relaxation="NONE", 
-            inner_maximum=ninner, 
+            under_relaxation="NONE",
+            inner_maximum=ninner,
             inner_dvclose=hclose,
-            rcloserecord=rclose, 
+            rcloserecord=rclose,
             linear_acceleration="BICGSTAB",
-            scaling_method="NONE", 
+            scaling_method="NONE",
             reordering_method="NONE",
-            relaxation_factor=relax, 
-            filename=f"{gwtname}.ims"
+            relaxation_factor=relax,
+            filename=f"{gwtname}.ims",
         )
         sim.register_ims_package(imsgwt, [gwt.name])
 
         flopy.mf6.ModflowGwtdis(
-            gwt, 
-            nlay=gwf.dis.nlay.get_data(), 
-            nrow=gwf.dis.nrow.get_data(), 
-            ncol=gwf.dis.ncol.get_data(), 
-            delr=gwf.dis.delr.array, 
-            delc=gwf.dis.delc.array, 
-            top=gwf.dis.top.array,
-            botm=gwf.dis.botm.array, 
-            idomain=1, 
-            filename=f"{gwtname}.dis"
-        )
-        
-        flopy.mf6.ModflowGwtic(
             gwt,
-            strt=species_initial_conc,
-            filename=f"{gwtname}.ic"
+            nlay=gwf.dis.nlay.get_data(),
+            nrow=gwf.dis.nrow.get_data(),
+            ncol=gwf.dis.ncol.get_data(),
+            delr=gwf.dis.delr.array,
+            delc=gwf.dis.delc.array,
+            top=gwf.dis.top.array,
+            botm=gwf.dis.botm.array,
+            idomain=1,
+            filename=f"{gwtname}.dis",
         )
-        
+
+        flopy.mf6.ModflowGwtic(gwt, strt=species_initial_conc, filename=f"{gwtname}.ic")
+
         flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwtname}.adv")
 
         flopy.mf6.ModflowGwtdsp(
-            gwt, 
-            xt3d_off=True, 
-            alh=alh,
-            ath1=ath1,
-            atv=atv,
-            diffc=diffc,
-            filename=f"{gwtname}.dsp"
+            gwt, xt3d_off=True, alh=alh, ath1=ath1, atv=atv, diffc=diffc, filename=f"{gwtname}.dsp"
         )
 
         flopy.mf6.ModflowGwtmst(gwt, porosity=porosity, filename=f"{gwtname}.mst")
@@ -231,36 +204,30 @@ def transport_model(
         # ---------------------------------------------------------------------
         flopy.mf6.ModflowGwtsrc(
             gwt,
-            pname='SRC',
+            pname="SRC",
             save_flows=True,
             maxbound=src_maxbound,
             stress_period_data={0: src_data_list},
-            filename=f"{gwtname}.src"
+            filename=f"{gwtname}.src",
         )
         # ! ---------------------------------------------------------------------
 
-        sourcerecarray = [("WEL-1", "AUX", species_name),
-                          ("chd-1", "AUX", species_name)
-                        ]
-        flopy.mf6.ModflowGwtssm(
-            gwt, 
-            sources=sourcerecarray, 
-            filename=f"{gwtname}.ssm"
-        )
-        
+        sourcerecarray = [("WEL-1", "AUX", species_name), ("chd-1", "AUX", species_name)]
+        flopy.mf6.ModflowGwtssm(gwt, sources=sourcerecarray, filename=f"{gwtname}.ssm")
+
         flopy.mf6.ModflowGwtoc(
-            gwt, 
-            budget_filerecord=f"{gwtname}.cbc", 
+            gwt,
+            budget_filerecord=f"{gwtname}.cbc",
             concentration_filerecord=f"{gwtname}.ucn",
-            saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")]
+            saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")],
         )
-        
+
         flopy.mf6.ModflowGwfgwt(
-            sim, 
-            exgtype="GWF6-GWT6", 
-            exgmnamea=gwfname, 
-            exgmnameb=gwtname, 
-            filename=f"{gwtname}.gwfgwt"
+            sim,
+            exgtype="GWF6-GWT6",
+            exgmnamea=gwfname,
+            exgmnameb=gwtname,
+            filename=f"{gwtname}.gwfgwt",
         )
 
     sim.write_simulation()

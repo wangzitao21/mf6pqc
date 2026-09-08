@@ -1,0 +1,41 @@
+name: Publish reviewed release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ".[dev,examples]"
+      - name: Require a release version
+        run: python -c "from packaging.version import Version; from mf6pqc import __version__; assert not Version(__version__).is_devrelease, 'Resolve release blockers and choose a release version first'"
+      - run: python -m unittest discover -s tests -v
+      - run: python -m ruff check mf6pqc tests examples scripts
+      - run: python -m ruff format --check mf6pqc tests examples scripts
+      - run: python scripts/check_examples.py
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - run: python scripts/check_distribution.py dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mf6pqc
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

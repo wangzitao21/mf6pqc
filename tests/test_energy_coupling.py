@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -107,11 +107,14 @@ class EnergyBindingTests(unittest.TestCase):
 
         run_reaction_step(sim, np.array([1.0, 2.0]), reacted, 3.0, 0.25)
 
-        self.assertEqual([event[0] for event in sim.phreeqc_rm.events], [
-            "temperature",
-            "concentrations",
-            "run",
-        ])
+        self.assertEqual(
+            [event[0] for event in sim.phreeqc_rm.events],
+            [
+                "temperature",
+                "concentrations",
+                "run",
+            ],
+        )
         np.testing.assert_array_equal(sim.temperature, [42.0, 55.0])
         np.testing.assert_array_equal(reacted, [1.0, 2.0])
         self.assertEqual(sim.phreeqc_rm.time, 3.0 * 86_400.0)

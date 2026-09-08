@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from collections.abc import Sequence
 
+import _example_support as _example_support
 import flopy
 import numpy as np
+from _example_support import executable_path
 
 from mf6pqc.utils import get_gwt_model_name
-
 
 MATRIX_OXIDANT_CAPACITY = 2.0e-4
 LENS_OXIDANT_CAPACITY = 8.0e-4
@@ -15,9 +20,7 @@ LENS_OXIDANT_CAPACITY = 8.0e-4
 def hydraulic_conductivity_field(nrow: int, ncol: int) -> np.ndarray:
     """Return a deterministic channel-and-matrix conductivity field (m/day)."""
     rows, columns = np.indices((nrow, ncol))
-    channel_center = 0.50 * (nrow - 1) + 1.8 * np.sin(
-        2.0 * np.pi * columns / max(ncol - 1, 1)
-    )
+    channel_center = 0.50 * (nrow - 1) + 1.8 * np.sin(2.0 * np.pi * columns / max(ncol - 1, 1))
     distance = np.abs(rows - channel_center)
     field = np.full((nrow, ncol), 0.45, dtype=float)
     field[distance <= 1.25] = 1.35
@@ -51,9 +54,7 @@ def _component_fields(
     values = np.asarray(initial_conc, dtype=float).ravel()
     expected = len(species_list) * nxyz
     if values.size != expected:
-        raise ValueError(
-            f"initial_conc has {values.size} entries; expected {expected}"
-        )
+        raise ValueError(f"initial_conc has {values.size} entries; expected {expected}")
     return {
         component: values[index * nxyz : (index + 1) * nxyz]
         for index, component in enumerate(species_list)
@@ -78,9 +79,7 @@ def build_transport_model(
     strang_half_steps: bool = False,
 ) -> dict[str, np.ndarray]:
     """Build the two-dimensional pulse/flush flow and transport system."""
-    if len(logical_steps_per_period) != 2 or any(
-        steps <= 0 for steps in logical_steps_per_period
-    ):
+    if len(logical_steps_per_period) != 2 or any(steps <= 0 for steps in logical_steps_per_period):
         raise ValueError("logical_steps_per_period must contain two positive values")
     nxyz = nrow * ncol
     delr = length / ncol
@@ -96,7 +95,7 @@ def build_transport_model(
     simulation = flopy.mf6.MFSimulation(
         sim_name="splitting_redox_2d",
         sim_ws=sim_ws,
-        exe_name="./bin/mf6.7.0/mf6.exe",
+        exe_name=executable_path("mf6.7.0"),
         verbosity_level=0,
     )
     flopy.mf6.ModflowTdis(
@@ -109,9 +108,7 @@ def build_transport_model(
         ],
     )
 
-    gwf = flopy.mf6.ModflowGwf(
-        simulation, modelname="gwf_model", save_flows=True
-    )
+    gwf = flopy.mf6.ModflowGwf(simulation, modelname="gwf_model", save_flows=True)
     flow_ims = flopy.mf6.ModflowIms(
         simulation,
         pname="flow_ims",
@@ -164,11 +161,7 @@ def build_transport_model(
         stress_period_data={0: outlet_records},
     )
 
-    source_records = [
-        ((0, row, column), 0.0)
-        for row in range(nrow)
-        for column in range(ncol)
-    ]
+    source_records = [((0, row, column), 0.0) for row in range(nrow) for column in range(ncol)]
     for component, starting_concentration in component_fields.items():
         gwt_name = get_gwt_model_name(component)
         gwt = flopy.mf6.ModflowGwt(
@@ -199,9 +192,7 @@ def build_transport_model(
             top=1.0,
             botm=0.0,
         )
-        flopy.mf6.ModflowGwtic(
-            gwt, strt=starting_concentration.reshape(1, nrow, ncol)
-        )
+        flopy.mf6.ModflowGwtic(gwt, strt=starting_concentration.reshape(1, nrow, ncol))
         flopy.mf6.ModflowGwtadv(gwt, scheme="TVD")
         flopy.mf6.ModflowGwtdsp(
             gwt,
@@ -217,9 +208,7 @@ def build_transport_model(
             maxbound=nxyz,
             stress_period_data={0: source_records},
         )
-        flopy.mf6.ModflowGwtssm(
-            gwt, sources=[("INLET", "AUX", component)]
-        )
+        flopy.mf6.ModflowGwtssm(gwt, sources=[("INLET", "AUX", component)])
         flopy.mf6.ModflowGwfgwt(
             simulation,
             exgtype="GWF6-GWT6",

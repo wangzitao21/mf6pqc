@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import os
-from pathlib import Path
 import tempfile
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from mf6pqc.constants import MAX_POROSITY, MIN_POROSITY
+
+_logger = logging.getLogger(__name__)
 
 
 def extract_output_information(
@@ -58,9 +62,7 @@ def update_porosity(
     indices = np.asarray(output_indices, dtype=int).ravel()
     volumes = np.asarray(mineral_volumes, dtype=float).reshape(-1, 1)
     if selected.ndim != 2 or selected.shape[1] != current.size:
-        raise ValueError(
-            "selected_output must have shape (noutput, nxyz) matching porosity"
-        )
+        raise ValueError("selected_output must have shape (noutput, nxyz) matching porosity")
     if indices.size != volumes.shape[0]:
         raise ValueError("Mineral output indices and molar volumes have different lengths")
     if indices.size == 0:
@@ -104,10 +106,8 @@ def _atomic_save(path: Path, values: Any) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary_name, path)
     except Exception:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
         raise
 
 
@@ -122,11 +122,29 @@ def _atomic_write_text(path: Path, text: str) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary_name, path)
     except Exception:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
         raise
+
+
+def environment_metadata() -> dict[str, Any]:
+    """Return reproducibility information without importing optional backends."""
+    import platform
+    from importlib.metadata import PackageNotFoundError, version
+
+    from mf6pqc._version import __version__
+
+    packages = {"mf6pqc": __version__}
+    for name in ("numpy", "modflowapi", "phreeqcrm", "flopy"):
+        try:
+            packages[name] = version(name)
+        except PackageNotFoundError:
+            continue
+    return {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "packages": packages,
+    }
 
 
 def save_results(
@@ -148,11 +166,15 @@ def save_results(
     """Validate and atomically save MF6PQC arrays plus a small manifest."""
     if not headings:
         raise ValueError("Cannot save results without selected-output headings")
-    values = np.asarray(results)
+    if any(not isinstance(h, str) or not h.strip() or "\n" in h or "\r" in h for h in headings):
+        raise ValueError("Headings must be nonempty single-line strings")
+    # Validate user metadata before changing any existing result file.
+    json.dumps(metadata, allow_nan=False)
+    values = np.asarray(results, dtype=float)
     if values.ndim != 3:
-        raise ValueError(
-            f"results must have shape (time, output, cell); got {values.shape}"
-        )
+        raise ValueError(f"results must have shape (time, output, cell); got {values.shape}")
+    if values.shape[0] == 0 or values.shape[2] == 0:
+        raise ValueError("Results must contain at least one frame and one cell")
     if values.shape[1] != len(headings):
         raise ValueError(
             f"results contain {values.shape[1]} outputs but there are {len(headings)} headings"
@@ -184,12 +206,16 @@ def save_results(
         if (
             not np.all(np.isfinite(porosity_values))
             or not np.all(np.isfinite(conductivity_values))
+            or np.any(porosity_values <= 0.0)
+            or np.any(porosity_values > 1.0)
             or np.any(conductivity_values <= 0.0)
         ):
             raise ValueError("Porosity/K results contain invalid values")
     if if_update_diffc:
         diffusion_values = np.asarray(results_diffc, dtype=float)
         expected_shape = (max(0, values.shape[0] - 1), values.shape[2])
+        if expected_shape[0] == 0 and diffusion_values.size == 0:
+            diffusion_values = np.empty(expected_shape, dtype=float)
         if diffusion_values.shape != expected_shape:
             raise ValueError(
                 f"Diffusion results have shape {diffusion_values.shape}; expected {expected_shape}"
@@ -218,8 +244,7 @@ def save_results(
             field = np.asarray(raw, dtype=float)
             if field.shape != expected_shape:
                 raise ValueError(
-                    f"Energy field {name!r} has shape {field.shape}; "
-                    f"expected {expected_shape}"
+                    f"Energy field {name!r} has shape {field.shape}; expected {expected_shape}"
                 )
             if not np.all(np.isfinite(field)):
                 raise ValueError(f"Energy field {name!r} contains non-finite values")
@@ -237,12 +262,17 @@ def save_results(
         result_path = result_path.with_suffix(".npy")
     result_path.parent.mkdir(parents=True, exist_ok=True)
     base = result_path.with_suffix("")
+    # A manifest is the completion marker for this group of files. Remove the
+    # previous marker only after validation, so interrupted writes cannot look
+    # like a completed generation. Each array is independently atomic.
+    manifest_path = Path(f"{base}_manifest.json")
+    manifest_path.unlink(missing_ok=True)
     _atomic_save(result_path, values)
-    print(f"Results saved to: {result_path}")
+    _logger.info(f"Results saved to: {result_path}")
 
     headings_path = Path(f"{base}_headings.txt")
     _atomic_write_text(headings_path, "".join(f"{heading}\n" for heading in headings))
-    print(f"Headings saved to: {headings_path}")
+    _logger.info(f"Headings saved to: {headings_path}")
 
     saved_files = [result_path.name, headings_path.name]
     if times is not None:
@@ -256,13 +286,13 @@ def save_results(
         _atomic_save(porosity_path, porosity_values)
         _atomic_save(conductivity_path, conductivity_values)
         saved_files.extend([porosity_path.name, conductivity_path.name])
-        print(f"Porosity results saved to: {porosity_path}")
-        print(f"K results saved to: {conductivity_path}")
+        _logger.info(f"Porosity results saved to: {porosity_path}")
+        _logger.info(f"K results saved to: {conductivity_path}")
     if if_update_diffc:
         diffusion_path = Path(f"{base}_diffc.npy")
         _atomic_save(diffusion_path, diffusion_values)
         saved_files.append(diffusion_path.name)
-        print(f"DIFFC results saved to: {diffusion_path}")
+        _logger.info(f"DIFFC results saved to: {diffusion_path}")
     energy_files: dict[str, str] = {}
     for name, field in thermal_values.items():
         energy_path = Path(f"{base}_{name}.npy")
@@ -270,7 +300,7 @@ def save_results(
         saved_files.append(energy_path.name)
         energy_files[name] = energy_path.name
     if energy_files:
-        print(f"Thermal/VSC results saved to: {base}_*.npy")
+        _logger.info(f"Thermal/VSC results saved to: {base}_*.npy")
 
     manifest = {
         "schema_version": 1,
@@ -280,6 +310,8 @@ def save_results(
         "files": saved_files,
         "has_porosity_and_k": bool(if_update_porosity_k),
         "has_diffusion": bool(if_update_diffc),
+        "time_units": "days",
+        "diffusion_time_axis": "results_times[1:]" if if_update_diffc else None,
     }
     if thermal_values:
         manifest["has_energy"] = True
@@ -301,5 +333,5 @@ def save_results(
     manifest_path = Path(f"{base}_manifest.json")
     _atomic_write_text(
         manifest_path,
-        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n",
     )

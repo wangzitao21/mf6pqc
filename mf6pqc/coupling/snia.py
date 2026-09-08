@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+import logging
 import time
-
-import numpy as np
 
 from mf6pqc.backends import initialize_modflow6
 from mf6pqc.coupling.common import (
@@ -27,6 +26,8 @@ from mf6pqc.coupling.common import (
 )
 from mf6pqc.coupling.state import StandardCouplingState
 from mf6pqc.feedback import update_medium_properties, write_conductivity_for_step
+
+_logger = logging.getLogger(__name__)
 
 
 def standard_time_step(sim, state: StandardCouplingState) -> None:
@@ -63,9 +64,7 @@ def standard_time_step(sim, state: StandardCouplingState) -> None:
         write_concentrations_to_modflow(
             state.concentration_variables, state.species_slices, state.reacted
         )
-        state.current_k11 = update_medium_properties(
-            sim, state.current_k11, state.logical_step
-        )
+        state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
         save_time_step_results(sim, state.logical_step, state.current_time)
     state.logical_step += 1
     log_progress(
@@ -80,7 +79,7 @@ def run_standard(sim) -> None:
     """Run sequential non-iterative reactive transport to the TDIS end time."""
     validate_setup(sim)
     initialize_modflow6(sim)
-    print("\n--- Starting reactive transport simulation (SNIA) ---")
+    _logger.info("\n--- Starting reactive transport simulation (SNIA) ---")
     start = time.perf_counter()
     cache_basic_geometry(sim)
     state = build_standard_state(sim)

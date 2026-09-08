@@ -1,3 +1,8 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import _example_support as _example_support
 import flopy
 import numpy as np
 
@@ -83,10 +88,7 @@ def transport_model(
         steady_state={0: True},
     )
 
-    left_chd = [
-        [(0, row, 0), 100.0, *background_concentrations]
-        for row in range(nrow)
-    ]
+    left_chd = [[(0, row, 0), 100.0, *background_concentrations] for row in range(nrow)]
     flopy.mf6.ModflowGwfchd(
         gwf,
         pname="CHD-LEFT",

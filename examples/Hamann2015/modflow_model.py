@@ -7,13 +7,16 @@ and transported component concentrations are in mol/L.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import sys
 from pathlib import Path
-from typing import Iterable
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from collections.abc import Iterable
+from dataclasses import dataclass
+
+import _example_support as _example_support
 import flopy
 import numpy as np
-
 
 DAYS_PER_YEAR = 365.25
 
@@ -267,10 +270,7 @@ def build_transport_model(
 
     split_col = int(np.count_nonzero(grid.x_centres < 50.0))
     recharge_rate = (80.0 / 1000.0) / DAYS_PER_YEAR
-    recharge_spd = [
-        ((0, 0, j), recharge_rate, *recharge_concentrations)
-        for j in range(split_col)
-    ]
+    recharge_spd = [((0, 0, j), recharge_rate, *recharge_concentrations) for j in range(split_col)]
     flopy.mf6.ModflowGwfrch(
         gwf,
         pname="RECHARGE",
@@ -291,7 +291,7 @@ def build_transport_model(
             -(rate / 1000.0) / DAYS_PER_YEAR,
             *evaporation_aux,
         )
-        for j, rate in zip(range(split_col, grid.ncol), evaporation_rates)
+        for j, rate in zip(range(split_col, grid.ncol), evaporation_rates, strict=False)
     ]
     flopy.mf6.ModflowGwfrch(
         gwf,
@@ -377,11 +377,7 @@ def build_transport_model(
             pname="SRC",
             maxbound=grid.nxyz,
             stress_period_data={
-                0: [
-                    ((k, 0, j), 0.0)
-                    for k in range(grid.nlay)
-                    for j in range(grid.ncol)
-                ]
+                0: [((k, 0, j), 0.0) for k in range(grid.nlay) for j in range(grid.ncol)]
             },
             filename=f"{gwt_name}.src",
         )
@@ -428,9 +424,5 @@ def water_only_sink_rates(grid: Grid) -> np.ndarray:
     rates = np.zeros(grid.nxyz, dtype=float)
     split_col = int(np.count_nonzero(grid.x_centres < 50.0))
     evaporation = evaporation_rates_mm_per_year(grid)
-    rates[split_col : grid.ncol] = (
-        (evaporation / 1000.0)
-        / DAYS_PER_YEAR
-        * grid.delr[split_col:]
-    )
+    rates[split_col : grid.ncol] = (evaporation / 1000.0) / DAYS_PER_YEAR * grid.delr[split_col:]
     return rates

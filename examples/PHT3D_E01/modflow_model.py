@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-import flopy
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import _example_support as _example_support
+import flopy
 
 NLAY = 1
 NROW = 1
@@ -168,9 +172,7 @@ def transport_model(
             gwt,
             pname="CNC-INFLOW",
             stress_period_data={
-                0: [[(0, 0, 0), inflow_concentrations[
-                    species_list.index(species_name)
-                ]]]
+                0: [[(0, 0, 0), inflow_concentrations[species_list.index(species_name)]]]
             },
             filename=f"{gwt_name}.cnc",
         )

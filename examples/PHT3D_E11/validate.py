@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import _example_support as _example_support
 import numpy as np
-
+from _example_support import runtime_path
 
 CASE_DIR = Path(__file__).resolve().parent
 REPOSITORY_DIR = CASE_DIR.parents[1]
-sys.path.insert(0, str(REPOSITORY_DIR))
 
 from modflow_model import BOTM, DELR, NCOL, NLAY, TOP
-
 
 CARBON_STANDARD_RATIO = 0.0112372
 SULFUR_STANDARD_RATIO = (1.021e-4 / 2.192e-3) / 1.010
@@ -53,15 +54,8 @@ def isotope_delta(
     """Return isotope delta while masking ratios below the display threshold."""
     total = light + heavy
     delta = np.full(total.shape, background_delta, dtype=float)
-    valid = (
-        np.isfinite(light)
-        & np.isfinite(heavy)
-        & (total > threshold)
-        & (light > 0.0)
-    )
-    delta[valid] = (
-        heavy[valid] / light[valid] / standard_ratio - 1.0
-    ) * 1000.0
+    valid = np.isfinite(light) & np.isfinite(heavy) & (total > threshold) & (light > 0.0)
+    delta[valid] = (heavy[valid] / light[valid] / standard_ratio - 1.0) * 1000.0
     delta[~np.isfinite(total)] = np.nan
     return delta
 
@@ -115,21 +109,17 @@ def load_case_fields() -> tuple[
     dict[str, np.ndarray],
 ]:
     """Load MF6PQC and official arrays and return their derived fields."""
-    output_dir = CASE_DIR / "output"
+    output_dir = runtime_path(__file__, "output")
     results = np.load(output_dir / "results.npy")
     result_times = np.load(output_dir / "results_times.npy")
     headings = [
         line.strip()
-        for line in (output_dir / "results_headings.txt")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (output_dir / "results_headings.txt").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     expected_shape = (result_times.size, len(headings), NLAY * NCOL)
     if results.shape != expected_shape:
-        raise AssertionError(
-            f"Unexpected result shape {results.shape}; expected {expected_shape}"
-        )
+        raise AssertionError(f"Unexpected result shape {results.shape}; expected {expected_shape}")
     if not np.all(np.isfinite(results)):
         raise AssertionError("MF6PQC results contain non-finite values")
 
@@ -150,16 +140,8 @@ def comparison_metrics() -> list[dict[str, float | int | str]]:
     x, z, x_grid, z_grid = grid_centres()
     well_column = int(np.argmin(np.abs(x - PROFILE_X)))
     wet = np.isfinite(reference_fields["Sulfate"][-1])
-    figure_mask = (
-        wet
-        & (x_grid >= 4.0)
-        & (x_grid <= 36.0)
-        & (z_grid >= 32.5)
-        & (z_grid <= 34.15)
-    )
-    profile_domain = (
-        (z >= 32.5) & (z <= 34.15) & wet[:, well_column]
-    )
+    figure_mask = wet & (x_grid >= 4.0) & (x_grid <= 36.0) & (z_grid >= 32.5) & (z_grid <= 34.15)
+    profile_domain = (z >= 32.5) & (z <= 34.15) & wet[:, well_column]
 
     rows: list[dict[str, float | int | str]] = []
     for name, limits, concentration_scale in DISPLAY_SPECS:
@@ -169,17 +151,13 @@ def comparison_metrics() -> list[dict[str, float | int | str]]:
         profile_mask = profile_domain.copy()
         if name.startswith("delta13C"):
             concentration_name = name.removeprefix("delta13C ")
-            organic_mask = (
-                reference_fields[concentration_name][-1]
-                > ORGANIC_DISPLAY_THRESHOLD
-            )
+            organic_mask = reference_fields[concentration_name][-1] > ORGANIC_DISPLAY_THRESHOLD
             field_mask &= organic_mask
             profile_mask &= organic_mask[:, well_column]
 
         field_error = reproduced[field_mask] - official[field_mask]
         profile_error = (
-            reproduced[:, well_column][profile_mask]
-            - official[:, well_column][profile_mask]
+            reproduced[:, well_column][profile_mask] - official[:, well_column][profile_mask]
         )
         field_rmse = float(np.sqrt(np.mean(field_error**2)))
         profile_rmse = float(np.sqrt(np.mean(profile_error**2)))
@@ -203,10 +181,7 @@ def comparison_metrics() -> list[dict[str, float | int | str]]:
 def main() -> None:
     rows = comparison_metrics()
     print("Official PHT3D day-60 comparison")
-    print(
-        f"{'quantity':<26} {'field RMSE':>12} {'HR-MLW RMSE':>14} "
-        f"{'unit':>15} {'cells':>7}"
-    )
+    print(f"{'quantity':<26} {'field RMSE':>12} {'HR-MLW RMSE':>14} {'unit':>15} {'cells':>7}")
     for row in rows:
         print(
             f"{row['name']:<26} {row['field_rmse']:12.4f} "
@@ -223,4 +198,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _example_support.configure_logging()
     main()

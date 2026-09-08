@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import sys
 import unittest
+from pathlib import Path
 
 import numpy as np
 
-
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = ROOT / "examples" / "SaltLake_Brine3D" / "case_config.py"
+CONFIG_PATH = ROOT / "examples" / "SaltLake_Brine3D" / "modflow_model.py"
 SPEC = importlib.util.spec_from_file_location("salt_lake_case_config", CONFIG_PATH)
 if SPEC is None or SPEC.loader is None:  # pragma: no cover - import guard
     raise RuntimeError(f"Could not load {CONFIG_PATH}")
@@ -30,9 +29,7 @@ class SaltLakeScientificConfigurationTests(unittest.TestCase):
             + sum(fractions.values()),
             1.0,
         )
-        self.assertAlmostEqual(
-            case_config.potassium_grade_percent(fractions), 2.1981448924
-        )
+        self.assertAlmostEqual(case_config.potassium_grade_percent(fractions), 2.1981448924)
 
     def test_every_facies_preserves_total_evaporite_volume(self):
         grades = []
@@ -40,9 +37,7 @@ class SaltLakeScientificConfigurationTests(unittest.TestCase):
             self.assertAlmostEqual(sum(fractions.values()), 0.70, msg=facies)
             moles = case_config.FACIES_MINERAL_MOLES[facies]
             volume = sum(
-                moles[name]
-                * case_config.MINERAL_MOLAR_VOLUMES_L_PER_MOL[name]
-                for name in moles
+                moles[name] * case_config.MINERAL_MOLAR_VOLUMES_L_PER_MOL[name] for name in moles
             )
             self.assertAlmostEqual(volume, 0.70, msg=facies)
             grades.append(case_config.potassium_grade_percent(fractions))
@@ -56,9 +51,7 @@ class SaltLakeScientificConfigurationTests(unittest.TestCase):
             self.assertLess(profile.channel_column, profile.well_column)
             self.assertTrue(all(cell[0] == 0 for cell in profile.channel_cells))
             self.assertTrue(all(cell[0] == 0 for cell in profile.well_cells))
-            self.assertEqual(
-                profile.total_steps, profile.years * profile.steps_per_year
-            )
+            self.assertEqual(profile.total_steps, profile.years * profile.steps_per_year)
 
     def test_heterogeneous_fields_match_modflow_cell_order(self):
         profile = case_config.PROFILES["smoke"]
@@ -71,19 +64,13 @@ class SaltLakeScientificConfigurationTests(unittest.TestCase):
 
     def test_highres_uses_reproducible_lognormal_random_field(self):
         profile = case_config.PROFILES["highres"]
-        first = case_config.initial_hydraulic_conductivity(profile).reshape(
-            profile.shape
-        )
-        second = case_config.initial_hydraulic_conductivity(profile).reshape(
-            profile.shape
-        )
+        first = case_config.initial_hydraulic_conductivity(profile).reshape(profile.shape)
+        second = case_config.initial_hydraulic_conductivity(profile).reshape(profile.shape)
         np.testing.assert_array_equal(first, second)
         self.assertEqual(profile.nxyz, 5_400)
         self.assertTrue(profile.uniform_mineralogy)
         self.assertEqual(set(np.unique(case_config.kinetic_facies(profile))), {1})
-        for layer, target in enumerate(
-            profile.layer_geometric_mean_k_m_per_day
-        ):
+        for layer, target in enumerate(profile.layer_geometric_mean_k_m_per_day):
             self.assertAlmostEqual(
                 float(np.exp(np.mean(np.log(first[layer])))),
                 target,
