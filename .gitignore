@@ -34,6 +34,7 @@ dist/
 # Local case and reference collections
 /cases/
 /article/
+/references/
 
 # Local release verification artifacts
 /.release-checks/
