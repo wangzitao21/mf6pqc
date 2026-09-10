@@ -1,6 +1,7 @@
-include README.md LICENSE CHANGELOG.md CONTRIBUTING.md CITATION.cff pyproject.toml requirements.txt
+include README.md LICENSE pyproject.toml requirements.txt
 recursive-include mf6pqc *.py py.typed
-recursive-include docs *.md *.json
+prune docs
+exclude CONTRIBUTING.md CHANGELOG.md CITATION.cff
 recursive-include tests *.py
 recursive-include scripts *.py
 recursive-include examples *.py *.ipynb *.pqi *.dat *.npz *.npy *.csv *.txt *.md

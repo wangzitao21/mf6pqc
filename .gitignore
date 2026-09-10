@@ -1,6 +1,5 @@
 # Local research, native binaries, and release checks
 /cases/
-/references/
 /bin/
 /.release-checks/
 

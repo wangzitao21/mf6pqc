@@ -48,9 +48,6 @@ def check_distribution(directory: Path) -> None:
         metadata = BytesParser().parsebytes(read_member("PKG-INFO"))
         if metadata["Name"] != "mf6pqc" or metadata["Version"] != wheel_version:
             raise AssertionError("Wheel and source metadata differ")
-        citation = read_member("CITATION.cff").decode("utf-8")
-        if f"version: {wheel_version}" not in citation.splitlines():
-            raise AssertionError("Citation and distribution versions differ")
         for name in members:
             if name.endswith(".ipynb"):
                 notebook = json.loads(read_member(name))
@@ -66,8 +63,6 @@ def check_distribution(directory: Path) -> None:
             "LICENSE",
             "mf6pqc/py.typed",
             "tests/test_public_api.py",
-            "docs/release-verification.json",
-            "CITATION.cff",
             "examples/README.md",
             "examples/PHT3D_E01/input_data/input.pqi",
             "examples/PHT3D_E08/input_data/official_reference.npz",
@@ -79,6 +74,10 @@ def check_distribution(directory: Path) -> None:
             if not parts:
                 continue
             if parts[0] in {
+                "docs",
+                "CONTRIBUTING.md",
+                "CHANGELOG.md",
+                "CITATION.cff",
                 "article",
                 "cases",
                 "references",
