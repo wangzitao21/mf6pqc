@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples"
-# Each entry contains the explicitly approved short profile and its validator.
+# Each entry contains a short regression profile and its validator.
 NATIVE_CASES = {
     "PHT3D_E01": [("run.py", []), ("validate.py", [])],
     "PHT3D_E04": [("run.py", []), ("validate.py", [])],

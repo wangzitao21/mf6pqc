@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 authors = [
-  {name = "Zitao Wang", email = "zitao.wang@outlook.com"},
+  {name = "Zitao Wang", email = "zitao.wang@aust.edu.cn"},
 ]
 keywords = [
   "groundwater",
@@ -21,7 +21,7 @@ keywords = [
   "reactive transport",
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",

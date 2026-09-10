@@ -111,4 +111,4 @@ not the sole release criterion. Prefer a combination of:
 
 ## Current release evidence
 
-See [release-readiness.md](release-readiness.md) for the results of this revision, including the pre-existing E13 pH/Ca discrepancy. A static/import check does not count as a numerical validation of an unrun case.
+See [release-readiness.md](release-readiness.md) for historical results and their original environments, including the pre-existing E13 pH/Ca discrepancy. A static/import check does not count as a numerical validation of an unrun case.

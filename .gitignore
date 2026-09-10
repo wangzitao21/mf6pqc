@@ -1,43 +1,29 @@
-# Python caches and local environments
-**/__pycache__/
-**/*.py[cod]
-.venv/
-venv/
+# Local research, native binaries, and release checks
+/cases/
+/references/
+/bin/
+/.release-checks/
 
-# Test, lint, and coverage caches
-.coverage
-coverage.xml
-htmlcov/
+# Python environments and caches
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Build and test output
+/build/
+/dist/
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage*
+coverage.xml
+htmlcov/
 
-# Build and packaging output
-build/
-dist/
-*.egg-info/
-
-# Notebook execution state
-**/.ipynb_checkpoints/
-
-# Native MODFLOW binaries are installed locally
-/bin/
-
-# Generated model workspaces and outputs
+# Generated example files; retain empty-directory markers
 /examples/*/simulation/*
 !/examples/*/simulation/.gitkeep
 /examples/*/output/*
 !/examples/*/output/.gitkeep
-/cases/*/simulation/
-/cases/*/output/
-
-# Local case and reference collections
-/cases/
-/article/
-/references/
-
-# Local release verification artifacts
-/.release-checks/
-
-# Archived local cleanup artifacts
-/.venv-verify/

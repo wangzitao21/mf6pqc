@@ -2,7 +2,7 @@
 
 ## 审查范围
 
-本次审查覆盖：
+审查范围：
 
 - `mf6pqc/coupling/{common,snia,sia,strang,state}.py`；
 - 反应后孔隙率、K、扩散和密度反馈的提交时刻；
@@ -10,7 +10,7 @@
 - `Splitting_KineticDecay` 一维解析案例；
 - `Splitting_RedoxFront2D` 二维非线性案例。
 
-理论基准为 `references/Steefel1996_Approaches to modeling of reactive transport in porous media.pdf` 中 SNIA、Strang 和 SIA 的方程 (103)–(112)，以及 `references/MIN3P原理手册/MIN3P-THCm.pdf` 中全局隐式耦合、非线性迭代、时间步拒绝/缩短和质量平衡流程。MIN3P 并非 MF6PQC 算法的逐行模板，而是失败策略与长期架构的参照。
+理论基准为 Steefel 和 MacQuarrie（1996），《Approaches to modeling of reactive transport in porous media》 中 SNIA、Strang 和 SIA 的方程 (103)–(112)，以及 MIN3P-THCm 原理手册 中全局隐式耦合、非线性迭代、时间步拒绝/缩短和质量平衡流程。MIN3P 并非 MF6PQC 算法的逐行模板，而是失败策略与长期架构的参照。
 
 ## 已发现并修复的问题
 

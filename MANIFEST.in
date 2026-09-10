@@ -3,7 +3,7 @@ recursive-include mf6pqc *.py py.typed
 recursive-include docs *.md *.json
 recursive-include tests *.py
 recursive-include scripts *.py
-graft examples
+recursive-include examples *.py *.ipynb *.pqi *.dat *.npz *.npy *.csv *.txt *.md
 prune examples/*/output
 prune examples/*/simulation
 prune examples/*/__pycache__
@@ -16,5 +16,6 @@ prune bin
 prune .release-checks
 prune .venv
 global-exclude __pycache__ *.py[cod] .DS_Store
+global-exclude */.ipynb_checkpoints/*
 prune trash
 prune .venv-verify

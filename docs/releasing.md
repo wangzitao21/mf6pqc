@@ -1,33 +1,55 @@
-# Release procedure
+# Releasing MF6PQC
 
-首次发布请参照 [Windows PowerShell 中文操作指南](publishing-first-release.zh-CN.md)。
+For the Zenodo and PyPI steps, see the
+[Windows PowerShell guide](publishing-first-release.zh-CN.md).
 
-Packaging follows the [Python Packaging User Guide](https://packaging.python.org/en/latest/tutorials/packaging-projects/)
-and [setuptools file-selection guidance](https://setuptools.pypa.io/en/stable/userguide/miscellaneous.html).
-The version is defined once in `mf6pqc/_version.py` and read statically by setuptools.
-No native backend is loaded to obtain package metadata.
+## Version and source
 
-1. Resolve the scientific blockers in `docs/release-readiness.md`. Record the
-   quantitative acceptance results and cases intentionally not run.
-2. Select a release number in `mf6pqc/_version.py`, update `CHANGELOG.md`, and
-   review public compatibility and dependency constraints.
-3. From a clean virtual environment, install `.[dev,examples]`, run unit/static
-   checks, and the relevant short native checks. Use additional platforms before
-   advertising native support on them.
-4. Build with `python -m build`, then run `python -m twine check --strict dist/*`.
-5. Inspect the wheel and sdist using `python scripts/check_distribution.py dist`.
-   Install the wheel in a separate environment and import it from outside the
-   checkout. Set `MF6PQC_USE_INSTALLED=1` for native example runs against that wheel.
-6. Review the distributions and publish to TestPyPI before the public release.
-   Test installation with normal runtime dependencies resolved from PyPI.
-7. Publish the reviewed distributions to PyPI, create the matching version tag,
-   and archive the validation evidence alongside the release.
+The version is defined in `mf6pqc/_version.py` and read statically by setuptools.
+Use `1.0.0` for package and citation metadata, `v1.0.0` for the Git tag, and
+MF6PQC v1.0 as the model name in the paper. Update `CITATION.cff` and
+`CHANGELOG.md` with each release. Add the actual release date when publishing;
+do not assign the old v0.1.0 DOI to v1.0.0.
 
-The included `release.yml` is manually dispatched and uses PyPI Trusted
-Publishing with a GitHub `pypi` environment. Configure its required reviewers and
-the corresponding PyPI trusted publisher before enabling publication. No token
-belongs in source control. The workflow rejects development versions and reruns
-checks; it does not replace the scientific release review.
+Commit the reviewed release files and create the tag on that exact commit.
+Build from a clean checkout or a reviewed source archive. Local research folders,
+native binaries, notebook execution output and generated model results do not
+belong in the software distribution. Preserve scientific inputs and reference
+arrays. Archive paper-specific results separately when needed for reproduction.
 
-Do not upload the current development build as a stable release. This task
-prepares artifacts locally; it does not upload or publish anything.
+## Checks and artifacts
+
+```bash
+python -m pip install '.[dev,examples]'
+python -m unittest discover -s tests -v
+python -m ruff check mf6pqc tests examples scripts
+python -m ruff format --check mf6pqc tests examples scripts
+python scripts/check_examples.py
+python -m build
+python -m twine check --strict dist/*.whl dist/*.tar.gz
+python scripts/check_distribution.py dist
+```
+
+The commands above do not execute native simulations. Numerical validation is
+separate; its actual scope and limitations must be reported, including the
+[recorded E13 discrepancy](release-readiness.md). Install the wheel in a separate
+environment and verify import from outside the source tree before uploading.
+
+Upload the same reviewed wheel and source distribution to TestPyPI, then PyPI.
+Use explicit `.whl` and `.tar.gz` filenames: source ZIP archives and checksum
+files are for archiving, not for `twine upload`. Never replace an already
+published version's files with different code.
+
+## Optional GitHub publication workflow
+
+`.github/workflows/release.yml` is manually dispatched with an existing release
+tag. It checks that the tag, checked-out commit and package version agree,
+executes backend-free checks, and uses PyPI Trusted Publishing. Configure the
+`pypi` GitHub environment and the corresponding publisher for repository
+`wangzitao21/mf6pqc`, workflow `release.yml`, environment `pypi` before using it.
+Manual upload and this workflow are alternative ways to publish the same files.
+
+Zenodo's GitHub integration is independent of PyPI publication. If enabled,
+publishing a GitHub Release also triggers Zenodo archiving. Choose either that
+route or a manual new-version deposit for the same software release, and confirm
+that v1.0.0 belongs to the existing v0.1.0 version series.

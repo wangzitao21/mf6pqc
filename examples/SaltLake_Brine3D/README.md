@@ -1,12 +1,7 @@
 # 三维盐湖地下卤水补水溶矿基础算例
 
-## Material Passport
-
-- Origin Skill: academic-research-suite / experiment-agent
-- Origin Mode: plan + run + validate
-- Origin Date: 2026-08-16
-- Verification Status: `highres/feedback` 与 `highres/fixed` 均已完成并通过验证
-- Version Label: salt_lake_brine_3d_v1
+2026-08-16 的案例记录报告 `highres/feedback` 与 `highres/fixed` 已完成并通过验证。
+模型配置和验证标准见下文；该历史记录不代表后续软件版本重新执行了这些情景。
 
 本算例是一个理想化但可执行的三层承压反应运移模型，用于检验以下假设：蒸发盐溶解造成的孔隙率与水力传导系数增加，会把流量逐渐集中到少数路径，从而缩短补给水到采卤井的突破时间，并可能降低总体有效溶矿体积。
 

@@ -1,4 +1,4 @@
-# MF6PQC
+# MF6PQC v1.0
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
@@ -11,9 +11,9 @@ couples MODFLOW GWE/VSC temperature and viscosity with chemistry.
 
 This is research software. A converged calculation and a validated conceptual
 model are separate requirements. See the [scientific contracts](docs/scientific-contracts.md)
-and the [release verification record](docs/release-readiness.md) for tested
-behavior and known limitations. The current version remains a development
-release while outstanding benchmark discrepancies are investigated.
+and the [verification history](docs/release-readiness.md) for tested
+behavior and known limitations, including the E13 reference-comparison discrepancy.
+The Python distribution and software citation use version `1.0.0`.
 
 ## Installation
 
@@ -26,7 +26,8 @@ python -m venv .venv
 python -m pip install -e ".[examples]"
 ```
 
-After the first PyPI release, installation will be `python -m pip install mf6pqc`.
+Once v1.0.0 is published on PyPI, install it with
+`python -m pip install mf6pqc==1.0.0`.
 The core dependencies are NumPy, modflowapi, and phreeqcrm. FloPy, plotting,
 notebook, and example-specific dependencies are in the `examples` extra.
 

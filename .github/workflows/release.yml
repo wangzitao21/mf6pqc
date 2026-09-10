@@ -1,6 +1,11 @@
 name: Publish reviewed release
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag matching the package version (for example v1.0.0)
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
@@ -8,12 +13,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install ".[dev,examples]"
-      - name: Require a release version
-        run: python -c "from packaging.version import Version; from mf6pqc import __version__; assert not Version(__version__).is_devrelease, 'Resolve release blockers and choose a release version first'"
+      - name: Check release tag and version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          from packaging.version import Version
+          from mf6pqc import __version__
+
+          version = Version(__version__)
+          tag = os.environ["RELEASE_TAG"]
+          if version.is_prerelease or version.is_devrelease or version.local:
+              raise SystemExit("A public release version is required")
+          if tag != f"v{__version__}":
+              raise SystemExit("Release tag must match the package version")
+          def commit(ref):
+              return subprocess.check_output(["git", "rev-parse", "--verify", ref], text=True).strip()
+          if commit("HEAD") != commit(f"refs/tags/{tag}^{{commit}}"):
+              raise SystemExit("Checkout does not match the release tag")
+          PY
       - run: python -m unittest discover -s tests -v
       - run: python -m ruff check mf6pqc tests examples scripts
       - run: python -m ruff format --check mf6pqc tests examples scripts

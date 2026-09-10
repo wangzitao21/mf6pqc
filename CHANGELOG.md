@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased — 0.2.0 development series
+## 1.0.0
+
+- Provide SNIA, SIA and Strang coupling with optional porosity, hydraulic
+  conductivity, diffusion and density feedback, and an opt-in thermal pathway.
 
 - Require modflowapi 1.0.1 or a compatible 1.x release.
 - Standard Python logging with opt-in progress messages for library users.
@@ -18,5 +21,10 @@
   manifest last and include provenance and explicit time-axis semantics.
 - Retain historical class, constructor, coupling-method and updater imports.
 
-The current E13 cross-code discrepancy also occurs with the pre-refactor core.
-Its acceptance thresholds remain unchanged; see the release verification record.
+The recorded E13 pH/Ca comparison exceeds its acceptance thresholds; see
+[verification history](docs/release-readiness.md). Version 1.0.0 packaging
+preparation does not constitute a new numerical validation of the examples.
+
+## 0.1.0 — 2026-03-01
+
+- Initial archived release on [Zenodo](https://doi.org/10.5281/zenodo.18822578).

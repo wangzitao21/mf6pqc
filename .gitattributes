@@ -5,3 +5,14 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.ipynb text eol=lf
+
+# Keep local research and generated files out of Git source archives.
+/cases export-ignore
+/references export-ignore
+/article export-ignore
+/bin export-ignore
+/.release-checks export-ignore
+/examples/*/output/* export-ignore
+/examples/*/output/.gitkeep -export-ignore
+/examples/*/simulation/* export-ignore
+/examples/*/simulation/.gitkeep -export-ignore
