@@ -1,13 +1,17 @@
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.dont_write_bytecode = True
+
 import os
 
-import _example_support as _example_support
 import numpy as np
-from _example_support import executable_path, library_path, runtime_path
-from modflow_model import transport_model
+from modflow_model import (
+    configure_logging,
+    executable_path,
+    library_path,
+    runtime_path,
+    transport_model,
+)
 
 from mf6pqc import MF6PQC
 
@@ -46,7 +50,7 @@ def main() -> None:
         "solution_density_volume": False,
         "db_path": os.path.join(example_dir, "input_data/phreeqc.dat"),
         "pqi_path": os.path.join(example_dir, "input_data/input.pqi"),
-        "modflow_dll_path": library_path("mf6.7.0"),
+        "modflow_dll_path": library_path("mf6.8.0"),
         "workspace": simulation_dir,
         "output_dir": output_dir,
         "if_update_porosity_K": False,
@@ -86,5 +90,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     main()

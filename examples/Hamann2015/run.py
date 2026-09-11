@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.dont_write_bytecode = True
 import json
 import os
+from pathlib import Path
 
-import _example_support as _example_support
 import numpy as np
-from _example_support import executable_path, library_path, runtime_path
+from modflow_model import configure_logging, executable_path, library_path, runtime_path
 
 CASE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CASE_DIR.parents[1]
@@ -55,7 +54,7 @@ def main() -> None:
         solution_density_volume=False,
         db_path=str(CASE_DIR / "input_data" / "pitzer.dat"),
         pqi_path=str(CASE_DIR / "input_data" / "input.pqi"),
-        modflow_dll_path=library_path("mf6.7.0"),
+        modflow_dll_path=library_path("mf6.8.0"),
         workspace=str(workspace),
         output_dir=str(output_dir),
         if_update_porosity_K=False,
@@ -79,7 +78,7 @@ def main() -> None:
         components = simulator.get_components()
         build_transport_model(
             workspace=workspace,
-            mf6_executable=executable_path("mf6.7.0"),
+            mf6_executable=executable_path("mf6.8.0"),
             grid=grid,
             time_config=time_config,
             species=components,
@@ -132,5 +131,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     main()

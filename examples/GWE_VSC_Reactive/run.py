@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.dont_write_bytecode = True
+
 import os
 
-import _example_support as _example_support
-from _example_support import executable_path, library_path, runtime_path
 from modflow_model import (
     INITIAL_TEMPERATURE,
     NXYZ,
     POROSITY,
     build_model,
+    configure_logging,
+    executable_path,
+    library_path,
+    runtime_path,
 )
 
 from mf6pqc import (
@@ -39,7 +41,7 @@ def main() -> None:
         paths=BackendPaths(
             database=os.path.join(EXAMPLE_DIR, "input_data", "database.dat"),
             chemistry_input=os.path.join(EXAMPLE_DIR, "input_data", "input.pqi"),
-            modflow_library=library_path("mf6.7.0"),
+            modflow_library=library_path("mf6.8.0"),
             workspace=runtime_path(__file__, "simulation"),
             output_directory=runtime_path(__file__, "output"),
         ),
@@ -82,14 +84,14 @@ def main() -> None:
             species_list=simulator.get_components(),
             initial_concentrations=initial,
             inflow_concentrations=inflow,
-            mf6_exe=executable_path("mf6.7.0"),
+            mf6_exe=executable_path("mf6.8.0"),
         )
         simulator.run(method="ThermalSNIA")
         simulator.save_results()
 
-        print("GWE_VSC_Reactive completed. Run validate.py for quantitative checks.")
+        print("GWE_VSC_Reactive completed. Open plot.ipynb for quantitative checks.")
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     main()

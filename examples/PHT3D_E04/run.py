@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import sys
+
+sys.dont_write_bytecode = True
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import _example_support as _example_support
-from _example_support import library_path, runtime_path
 from modflow_model import (  # noqa: E402
     NXYZ,
     OUTPUT_INTERVALS,
     POROSITY,
     TIME_STEPS,
+    configure_logging,
+    executable_path,
+    library_path,
+    runtime_path,
     transport_model,
 )
 
@@ -22,7 +24,6 @@ from mf6pqc import MF6PQC  # noqa: E402
 
 def main() -> None:
     CASE_DIR = Path(__file__).resolve().parent
-    REPOSITORY_DIR = CASE_DIR.parents[1]
 
     with MF6PQC(
         case_name="PHT3D_E04",
@@ -38,7 +39,7 @@ def main() -> None:
         solution_density_volume=False,
         db_path=str(CASE_DIR / "input_data" / "phreeqc.dat"),
         pqi_path=str(CASE_DIR / "input_data" / "input.pqi"),
-        modflow_dll_path=library_path("mf6.7.0"),
+        modflow_dll_path=library_path("mf6.8.0"),
         workspace=str(runtime_path(__file__, "simulation")),
         output_dir=str(runtime_path(__file__, "output")),
         if_update_porosity_K=False,
@@ -63,7 +64,7 @@ def main() -> None:
             species_list=components,
             initial_conc=initial_concentrations,
             inflow_concentrations=inflow_concentrations,
-            mf6_exe=REPOSITORY_DIR / "bin" / "mf6.7.0" / "mf6.exe",
+            mf6_exe=executable_path(),
         )
         simulator.run()
         simulator.save_results()
@@ -78,5 +79,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     main()

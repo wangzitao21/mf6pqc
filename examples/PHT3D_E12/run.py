@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import sys
+
+sys.dont_write_bytecode = True
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import _example_support as _example_support
 import numpy as np
-from _example_support import executable_path, library_path, runtime_path
 from modflow_model import (
     NXYZ,
     POROSITY,
     TRANSPORT_SUBSTEPS,
+    configure_logging,
     coupling_period_data,
     coupling_step_end_times,
+    executable_path,
     flow_step_end_times,
+    library_path,
+    runtime_path,
     transport_model,
 )
 
@@ -84,7 +86,7 @@ def main() -> None:
         "solution_density_volume": False,
         "db_path": str(INPUT_DIR / "phreeqc.dat"),
         "pqi_path": str(INPUT_DIR / "input.pqi"),
-        "modflow_dll_path": library_path("mf6.7.0"),
+        "modflow_dll_path": library_path("mf6.8.0"),
         "workspace": str(runtime_path(__file__, "simulation")),
         "output_dir": str(runtime_path(__file__, "output")),
         "if_update_porosity_K": False,
@@ -116,7 +118,7 @@ def main() -> None:
             pulse_concentrations=pulse_concentrations,
             chase_concentrations=chase_concentrations,
             period_data=PERIOD_DATA,
-            mf6_exe=executable_path("mf6.7.0"),
+            mf6_exe=executable_path("mf6.8.0"),
         )
 
         simulator.run()
@@ -132,5 +134,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     main()

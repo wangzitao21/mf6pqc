@@ -52,21 +52,20 @@ def check_distribution(directory: Path) -> None:
             if name.endswith(".ipynb"):
                 notebook = json.loads(read_member(name))
                 if any(
-                    c.get("outputs") or c.get("execution_count") is not None
+                    any(o.get("output_type") == "error" for o in c.get("outputs", []))
                     for c in notebook["cells"]
                     if c["cell_type"] == "code"
                 ):
-                    raise AssertionError(f"Notebook execution output in source archive: {name}")
+                    raise AssertionError(f"Notebook execution error in source archive: {name}")
         files = {"/".join(parts) for parts in names if parts}
         for required in (
             "README.md",
             "LICENSE",
             "mf6pqc/py.typed",
             "tests/test_public_api.py",
-            "examples/README.md",
             "examples/PHT3D_E01/input_data/input.pqi",
             "examples/PHT3D_E08/input_data/official_reference.npz",
-            "examples/SaltLake_Brine3D/modflow_model.py",
+            "examples/Article_Channel2D/modflow_model.py",
         ):
             if required not in files:
                 raise AssertionError(f"Source archive is missing {required}")

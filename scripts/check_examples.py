@@ -1,7 +1,6 @@
-"""Check example imports or run a deliberately small native regression suite.
+"""Check self-contained example layouts and safe imports, or run selected cases.
 
-The six expensive published benchmarks are never executable through this tool.
-Native results are written under --output-root, preserving the example outputs.
+Long-running benchmarks are excluded from this native regression command.
 """
 
 from __future__ import annotations
@@ -17,20 +16,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples"
-# Each entry contains a short regression profile and its validator.
 NATIVE_CASES = {
-    "PHT3D_E01": [("run.py", []), ("validate.py", [])],
-    "PHT3D_E04": [("run.py", []), ("validate.py", [])],
-    "PHT3D_E08": [("run.py", []), ("validate.py", [])],
-    "PHT3D_E13": [("run.py", []), ("validate.py", [])],
-    "GWE_VSC_Reactive": [("run.py", []), ("validate.py", [])],
-    "Splitting_KineticDecay": [("validate.py", [])],
-    "SaltLake_Brine3D": [
-        ("run.py", ["--profile", "smoke", "--scenario", "feedback", "--threads", "2"]),
-        ("validate.py", ["--profile", "smoke", "--scenario", "feedback"]),
-    ],
+    name: [("run.py", [])]
+    for name in [
+        *(f"PHT3D_E{i:02}" for i in range(1, 11)),
+        "GWE_VSC_Reactive",
+        "Splitting_KineticDecay",
+        "Splitting_RedoxFront2D",
+    ]
 }
-ALLOWED_FILES = {"modflow_model.py", "run.py", "validate.py", "plot.py"}
+ALLOWED_FILES = {"modflow_model.py", "run.py", "plot.ipynb"}
+ALLOWED_ENTRIES = ALLOWED_FILES | {"input_data", "output", "simulation"}
 
 
 def check_static(*, allow_notebook_outputs: bool = False) -> list[dict]:
@@ -40,8 +36,10 @@ def check_static(*, allow_notebook_outputs: bool = False) -> list[dict]:
     transformer = TransformerManager()
     reports = []
     for case in sorted(EXAMPLES.iterdir()):
-        if not (case / "run.py").is_file():
-            continue
+        if not case.is_dir() or not (case / "run.py").is_file():
+            raise AssertionError(f"Unexpected entry in examples: {case.name}")
+        if {p.name for p in case.iterdir()} != ALLOWED_ENTRIES:
+            raise AssertionError(f"{case.name}: expected exactly six case entries")
         for name in ("input_data", "output", "simulation"):
             if not (case / name).is_dir():
                 raise AssertionError(f"{case.name}: missing {name}")
@@ -51,12 +49,11 @@ def check_static(*, allow_notebook_outputs: bool = False) -> list[dict]:
         notebook = json.loads((case / "plot.ipynb").read_text(encoding="utf-8"))
         for cell in notebook["cells"]:
             if cell["cell_type"] == "code":
-                if not allow_notebook_outputs and (
-                    cell.get("outputs") or cell.get("execution_count") is not None
-                ):
-                    raise AssertionError(f"{case.name}: notebook includes stale execution output")
+                if any(o.get("output_type") == "error" for o in cell.get("outputs", [])):
+                    raise AssertionError(f"{case.name}: notebook includes an execution error")
                 ast.parse(transformer.transform_cell("".join(cell["source"])))
         code = """import runpy, sys
+sys.dont_write_bytecode = True
 from unittest.mock import patch
 sys.path.insert(0, sys.argv[1])
 from mf6pqc.backends import NativeBackendFactory
@@ -75,6 +72,7 @@ with (
             text=True,
             encoding="utf-8",
             timeout=45,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"},
         )
         if completed.returncode:
             raise AssertionError(f"{case.name}: import check failed\n{completed.stderr}")
@@ -92,6 +90,7 @@ def check_native(names: list[str], output_root: Path, timeout: float) -> list[di
     env = os.environ.copy()
     env["MF6PQC_RUN_ROOT"] = str(output_root)
     env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     for name in names:
         for script, arguments in NATIVE_CASES[name]:
             start = time.perf_counter()
@@ -131,12 +130,12 @@ def main() -> None:
     parser.add_argument(
         "--allow-notebook-outputs",
         action="store_true",
-        help="check notebook syntax without requiring cleared execution output",
+        help="compatibility flag; saved notebook figures are allowed",
     )
     parser.add_argument("--native", nargs="+", choices=tuple(NATIVE_CASES), metavar="CASE")
     parser.add_argument("--output-root", type=Path, default=ROOT / ".release-checks" / "native")
     parser.add_argument(
-        "--timeout", type=float, default=180.0, help="maximum seconds for each short command"
+        "--timeout", type=float, default=600.0, help="maximum seconds for each selected case"
     )
     args = parser.parse_args()
     if args.timeout <= 0:

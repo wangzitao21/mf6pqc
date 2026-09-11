@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.dont_write_bytecode = True
 import argparse
 import csv
 import json
 import subprocess
+from pathlib import Path
 
-import _example_support as _example_support
 import numpy as np
-from _example_support import library_path, runtime_path
+from modflow_model import configure_logging, library_path, runtime_path
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXAMPLE_DIR.parents[1]
@@ -72,9 +71,9 @@ def run_realization(
         porosity=POROSITY,
         saturation=1.0,
         temperature=20.0,
-        db_path=str(REPO_ROOT / "examples" / "PHT3D_E01" / "input_data" / "phreeqc.dat"),
+        db_path=str(EXAMPLE_DIR / "input_data" / "phreeqc.dat"),
         pqi_path=str(EXAMPLE_DIR / "input_data" / "input.pqi"),
-        modflow_dll_path=library_path("mf6.7.0"),
+        modflow_dll_path=library_path("mf6.8.0"),
         workspace=str(workspace),
         output_dir=str(output_dir),
         progress_interval=100,
@@ -403,7 +402,7 @@ def run_comparison() -> None:
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument("--method", choices=METHODS)
     parser.add_argument("--steps", type=int, nargs=2, metavar=("PULSE", "FLUSH"))

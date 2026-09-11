@@ -10,7 +10,9 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = ROOT / "examples" / "SaltLake_Brine3D" / "modflow_model.py"
+CONFIG_PATH = ROOT / "cases" / "SaltLake_Brine3D" / "modflow_model.py"
+if not CONFIG_PATH.is_file():
+    raise unittest.SkipTest("Optional development case is not included in this distribution")
 SPEC = importlib.util.spec_from_file_location("salt_lake_case_config", CONFIG_PATH)
 if SPEC is None or SPEC.loader is None:  # pragma: no cover - import guard
     raise RuntimeError(f"Could not load {CONFIG_PATH}")

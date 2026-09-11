@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 import sys
+
+sys.dont_write_bytecode = True
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import _example_support as _example_support
 import numpy as np
-from _example_support import library_path, runtime_path
-from modflow_model import NCOL, NXYZ, POROSITY, transport_model
+from modflow_model import (
+    NCOL,
+    NXYZ,
+    POROSITY,
+    configure_logging,
+    executable_path,
+    library_path,
+    runtime_path,
+    transport_model,
+)
 
 from mf6pqc import MF6PQC
 
 
 def main() -> None:
     CASE_DIR = Path(__file__).resolve().parent
-    REPOSITORY_DIR = CASE_DIR.parents[1]
 
     INPUT_DIR = CASE_DIR / "input_data"
     zone_ids = np.repeat(np.arange(1, 5, dtype=np.int32), 4)
@@ -34,7 +40,7 @@ def main() -> None:
         "nxyz": NXYZ,
         "nthreads": 6,
         "temperature": 7.0,
-        "pressure": 2.0,
+        "pressure": 1.0,
         "porosity": POROSITY,
         "saturation": 1.0,
         "density": 1.0,
@@ -43,7 +49,7 @@ def main() -> None:
         "solution_density_volume": False,
         "db_path": str(INPUT_DIR / "phreeqc.dat"),
         "pqi_path": str(INPUT_DIR / "input.pqi"),
-        "modflow_dll_path": library_path("mf6.7.0"),
+        "modflow_dll_path": library_path("mf6.8.0"),
         "workspace": str(runtime_path(__file__, "simulation")),
         "output_dir": str(runtime_path(__file__, "output")),
         "if_update_porosity_K": False,
@@ -65,15 +71,15 @@ def main() -> None:
             initial_conc=initial_concentrations,
             pulse_concentrations=pulse_concentrations,
             chase_concentrations=chase_concentrations,
-            mf6_exe=REPOSITORY_DIR / "bin" / "mf6.7.0" / "mf6.exe",
+            mf6_exe=executable_path(),
         )
 
         simulator.run()
         simulator.save_results()
 
-        print(f"Saved {NCOL}-cell outlet histories for both official stress periods.")
+        print(f"Saved {NCOL}-cell outlet histories for both stress periods.")
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     main()

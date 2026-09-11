@@ -20,3 +20,5 @@ global-exclude __pycache__ *.py[cod] .DS_Store
 global-exclude */.ipynb_checkpoints/*
 prune trash
 prune .venv-verify
+
+recursive-include .github/assets *.png

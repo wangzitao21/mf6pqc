@@ -21,8 +21,8 @@ __pycache__/
 coverage.xml
 htmlcov/
 
-# Generated example files; retain empty-directory markers
+# Keep source-controlled lossless result archives and manuscript figures.
+# Fresh simulations expand/write numerical files locally in the same directories.
 /examples/*/simulation/*
-!/examples/*/simulation/.gitkeep
 /examples/*/output/*
-!/examples/*/output/.gitkeep
+/examples/*/output/figures/*

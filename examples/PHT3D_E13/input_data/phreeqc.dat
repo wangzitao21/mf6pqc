@@ -1535,13 +1535,14 @@ Calcite
    100   moles = parm(1) * 0.1 * (t)^parm(2)
    110   moles = moles * (k1 * act("H+") + k2 * act("CO2") + k3 * act("H2O"))
    120   moles = moles * (1 - 10^(2/3*si_cc))
-   130   moles = moles * time
+   # Convert the mol/kgw rate integral to moles in this reaction cell.
+   130   moles = moles * time * TOT("water")
    140  if (moles > m) then moles = m
    150 if (moles >= 0) then goto 200
    160  temp = tot("Ca")
    170  mc  = tot("C(4)")
    180  if mc < temp then temp = mc
-   190  if -moles > temp*0.376 then moles = -temp*0.376
+   190  if -moles > temp*TOT("water") then moles = -temp*TOT("water")
    200 save moles
   -end
 
@@ -1563,9 +1564,10 @@ Pyrite
    10 if (m <= 0) then goto 200
    20 if (si("Pyrite") >= 0) then goto 200
    20  rate = -10.19 + parm(1) + parm(3)*lm("O2") + parm(4)*lm("H+") + parm(2)*log10(m/m0)
-   30  moles = 10^rate * time
+   # parm(1) remains the reference log10(A/V); scale the resulting moles.
+   30  moles = 10^rate * time * TOT("water")
    40 if (moles > m) then moles = m
-   50 if (moles >= (mol("O2")/3.5)) then moles = mol("O2")/3.5
+   50 if (moles >= (mol("O2")*TOT("water")/3.5)) then moles = mol("O2")*TOT("water")/3.5
    200 save moles
   -end
 
@@ -1625,6 +1627,7 @@ Pyrolusite
 Orgc_sed # (Organic C in sediments)
 ##############################
  -start
+  # M is the finite organic-carbon inventory in moles, including water scaling.
   5 mOrgc_sed = M
  10 mO2 = mol("O2") * 1000
  20 if mO2 < 1 then mO2 = 1.0

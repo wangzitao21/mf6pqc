@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.dont_write_bytecode = True
+
 import os
 
-import _example_support as _example_support
 import numpy as np
-from _example_support import executable_path, library_path, runtime_path
-from modflow_model import NXYZ, transport_model
+from modflow_model import (
+    NXYZ,
+    configure_logging,
+    executable_path,
+    library_path,
+    runtime_path,
+    transport_model,
+)
 
 from mf6pqc import MF6PQC
 
@@ -46,7 +51,7 @@ def main() -> None:
         "solution_density_volume": False,
         "db_path": os.path.join(input_data_dir, "phreeqc.dat"),
         "pqi_path": os.path.join(input_data_dir, "input.pqi"),
-        "modflow_dll_path": library_path("mf6.7.0"),
+        "modflow_dll_path": library_path("mf6.8.0"),
         "workspace": runtime_path(__file__, "simulation"),
         "output_dir": runtime_path(__file__, "output"),
         "if_update_porosity_K": False,
@@ -85,5 +90,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     main()

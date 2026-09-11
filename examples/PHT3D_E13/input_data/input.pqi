@@ -60,7 +60,7 @@ COPY equilibrium_phases 1 2-4
 END
 
 EXCHANGE 1
-    # Exact A13 immobile-component inventories from pht3dbtn.dat.
+    # Exchanger inventories in mol per litre of bulk medium.
     X 0.032712
     Ya 0.001316
     Yb 0.001316
@@ -102,37 +102,34 @@ EXCHANGE 4
 END
 
 SURFACE 1
-    # PHT3D links 0.2 mol of sites to each mol of equilibrium goethite.
-    # With 0.027 mol goethite/L water and porosity 0.376, this is
-    # 0.027 * 0.2 * 0.376 = 0.0020304 mol sites/L bulk.
-    Hfo_wOH 0.0020304 600 0.2
+    # Site amount and area follow the equilibrium Goethite inventory.
+    # The reference specifies 0.2 mol sites/mol mineral and 600 m2/mol.
+    Hfo_w Goethite equilibrium_phase 0.2 600
     -equilibrate 0
 END
 COPY surface 1 2-4
 END
 
 KINETICS 1
+    # Reactant amounts are mol per litre of bulk medium. RATES converts
+    # water-based rates to moles using the reaction cell's water mass.
     Orgc_sed
-        # Native PHREEQC KINETICS decrements M; only the dissolved product
-        # belongs in the formula. PhreeqcRM performs the bulk/water conversion.
+        # PHT3D's immobile aqueous component is 0.89 mol/kgw.
+        # Here it is a finite kinetic inventory: 0.89 * 0.376 = 0.33464 mol.
         -formula C 1
-        -m0 0.89
-        -m 0.89
-        # PHT3D evaluates this rate for one litre of water. Scale the
-        # molar rate to the 0.376 L of water in one litre of bulk medium.
-        -parms 3.572e-10
+        -m0 0.33464
+        -m 0.33464
+        -parms 9.5e-10
     Calcite
+        # 4 mol/kgw * 0.376 kg water; parm(1) is A/V in 1/dm.
         -m0 1.504
         -m 1.504
-        # PHT3D's A/V is for one litre of water; the PhreeqcRM reaction
-        # cell contains 0.376 L water per litre of representative volume.
-        -parms 37.6 0.6
+        -parms 100 0.6
     Pyrite
+        # 0.04 mol/kgw * 0.376 kg water; parm(1) is log10(A/V).
         -m0 0.01504
         -m 0.01504
-        # PHT3D evaluates the A/V term per litre of water; PhreeqcRM
-        # KINETICS uses representative bulk volume for units option 0.
-        -parms 2.9952 0 0.5 0
+        -parms 3.42 0 0.5 0
 END
 COPY kinetics 1 2-4
 END

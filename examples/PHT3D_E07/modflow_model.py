@@ -1,11 +1,60 @@
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import _example_support as _example_support
+# Keep generated Python bytecode out of the six-entry example layout.
+sys.dont_write_bytecode = True
+REPOSITORY_DIR = Path(__file__).resolve().parents[2]
+if os.environ.get("MF6PQC_USE_INSTALLED") != "1":
+    sys.path.insert(0, str(REPOSITORY_DIR))
+
+
+def library_path(version="mf6.8.0"):
+    """Locate the MODFLOW 6.8.0 shared library for this platform."""
+    override = os.environ.get("MF6PQC_LIBMF6")
+    if override:
+        return str(Path(override).expanduser().resolve())
+    name = (
+        "libmf6.dll"
+        if sys.platform == "win32"
+        else "libmf6.dylib"
+        if sys.platform == "darwin"
+        else "libmf6.so"
+    )
+    directory = Path(os.environ.get("MF6PQC_BIN", REPOSITORY_DIR / "bin" / version))
+    return str((directory / name).expanduser().resolve())
+
+
+def executable_path(version="mf6.8.0"):
+    """Locate the standalone MODFLOW executable used by FloPy."""
+    override = os.environ.get("MF6PQC_MF6_EXE")
+    if override:
+        return str(Path(override).expanduser().resolve())
+    directory = Path(os.environ.get("MF6PQC_BIN", REPOSITORY_DIR / "bin" / version))
+    return str((directory / ("mf6.exe" if sys.platform == "win32" else "mf6")).resolve())
+
+
+def runtime_path(case_file, kind):
+    """Keep inputs local and optionally isolate generated model/results files."""
+    if kind not in {"output", "simulation"}:
+        raise ValueError("kind must be output or simulation")
+    case = Path(case_file).resolve().parent
+    override = os.environ.get("MF6PQC_RUN_ROOT")
+    base = Path(override).expanduser().resolve() / case.name if override else case
+    return base / kind
+
+
+def configure_logging():
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+
+import sys
+from pathlib import Path
+
 import flopy
 import numpy as np
-from _example_support import executable_path
 
 
 def transport_model(
@@ -33,7 +82,7 @@ def transport_model(
     nstp = [nstp]
 
     sim = flopy.mf6.MFSimulation(
-        sim_name=gwfname, sim_ws=sim_ws, exe_name=executable_path("mf6.7.0"), verbosity_level=0
+        sim_name=gwfname, sim_ws=sim_ws, exe_name=executable_path("mf6.8.0"), verbosity_level=0
     )
 
     flopy.mf6.ModflowTdis(

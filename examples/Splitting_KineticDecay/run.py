@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.dont_write_bytecode = True
 import argparse
 import csv
 import json
 import subprocess
+from pathlib import Path
 
-import _example_support as _example_support
 import numpy as np
-from _example_support import library_path, runtime_path
+from modflow_model import configure_logging, library_path, runtime_path
 from scipy.special import erfc
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
@@ -120,7 +119,9 @@ def _profile_key(method: str, cfl: float) -> str:
 
 
 def _run_directory(base: str, method: str, cfl: float) -> Path:
-    return EXAMPLE_DIR / base / "paper_figure6" / f"cfl_{_cfl_token(cfl)}" / method.lower()
+    return (
+        runtime_path(__file__, base) / "paper_figure6" / f"cfl_{_cfl_token(cfl)}" / method.lower()
+    )
 
 
 def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
@@ -134,9 +135,9 @@ def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
         nxyz=NGRID_NODES,
         nthreads=2,
         porosity=VOLUMETRIC_WATER_CONTENT,
-        db_path=str(REPO_ROOT / "examples" / "PHT3D_E01" / "input_data" / "phreeqc.dat"),
+        db_path=str(EXAMPLE_DIR / "input_data" / "phreeqc.dat"),
         pqi_path=str(EXAMPLE_DIR / "input_data" / "input.pqi"),
-        modflow_dll_path=library_path("mf6.7.0"),
+        modflow_dll_path=library_path("mf6.8.0"),
         workspace=str(workspace),
         output_dir=str(output_dir),
         progress_interval=250,
@@ -446,11 +447,11 @@ def run_paper_replication() -> None:
         raise AssertionError("The explicit x=0 Dirichlet node was altered by a coupling substep")
     if profiles[("SNIA", 1.0)][0] >= analytical_paper_nodes[0]:
         raise AssertionError("SNIA did not reproduce the paper's inlet over-reaction signature")
-    print("Paper-rate SIA validation passed; execute plot.ipynb or plot.py to create figures.")
+    print("Paper-rate SIA validation passed; execute plot.ipynb to create figures.")
 
 
 if __name__ == "__main__":
-    _example_support.configure_logging()
+    configure_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument("--method", choices=METHODS)
     parser.add_argument("--cfl", type=float, default=1.0)
