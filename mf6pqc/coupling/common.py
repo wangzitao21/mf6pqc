@@ -13,7 +13,7 @@ from mf6pqc.constants import (
     MIN_CONCENTRATION,
     SECONDS_PER_DAY,
 )
-from mf6pqc.coupling.state import StandardCouplingState
+from mf6pqc.coupling.state import SIACouplingState, StandardCouplingState
 from mf6pqc.exceptions import BackendError, ConvergenceError, CouplingError
 from mf6pqc.feedback import prepare_feedback
 from mf6pqc.utils import get_gwt_model_name, get_species_slice
@@ -208,6 +208,38 @@ def write_concentrations_to_modflow(
         pointer[:] = source[species_slices[index]].reshape(pointer.shape)
 
 
+def read_concentrations_from_phreeqcrm(sim, destination: np.ndarray) -> None:
+    """Read and validate concentrations in the backend's current volume basis."""
+    values = np.asarray(sim.phreeqc_rm.GetConcentrations(), dtype=float)
+    if values.shape != destination.shape:
+        raise BackendError(
+            f"PhreeqcRM returned concentration shape {values.shape}; expected {destination.shape}"
+        )
+    if not np.all(np.isfinite(values)):
+        raise CouplingError("PhreeqcRM produced non-finite concentrations")
+    destination[:] = values
+
+
+def commit_reaction_concentrations(sim, state: StandardCouplingState | SIACouplingState) -> None:
+    """Write the reaction endpoint after committing medium-property feedback.
+
+    With UseSolutionDensityVolume(False), GetConcentrations divides the stored
+    aqueous moles by the current porosity * saturation * representative volume.
+    SetPorosity changes that denominator, so the pre-feedback reaction buffer
+    must be refreshed before GWT uses the new MST porosity. Let PhreeqcRM apply
+    its configured volume convention instead of rescaling concentrations here.
+
+    Reading concentrations neither advances reactions nor replaces selected
+    output (including the mineral increments used for porosity feedback).
+    Fixed-porosity runs keep the original buffer and make no extra backend call.
+    """
+    if sim.if_update_porosity_K:
+        read_concentrations_from_phreeqcrm(sim, state.reacted)
+    write_concentrations_to_modflow(
+        state.concentration_variables, state.species_slices, state.reacted
+    )
+
+
 def enforce_component_domains(
     concentrations: np.ndarray,
     components: list[str] | tuple[str, ...],
@@ -262,14 +294,7 @@ def run_reaction_step(
     sim.phreeqc_rm.SetTime(start_time * SECONDS_PER_DAY)
     sim.phreeqc_rm.SetTimeStep(dt * SECONDS_PER_DAY)
     sim.phreeqc_rm.RunCells()
-    values = np.asarray(sim.phreeqc_rm.GetConcentrations(), dtype=float)
-    if values.shape != reacted.shape:
-        raise BackendError(
-            f"PhreeqcRM returned concentration shape {values.shape}; expected {reacted.shape}"
-        )
-    if not np.all(np.isfinite(values)):
-        raise CouplingError("PhreeqcRM produced non-finite concentrations")
-    reacted[:] = values
+    read_concentrations_from_phreeqcrm(sim, reacted)
 
 
 def get_calculated_density(sim) -> np.ndarray:

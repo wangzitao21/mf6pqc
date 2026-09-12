@@ -1,0 +1,49 @@
+SOLUTION 0
+      units mol/L
+      temp 25
+      pH   7.286 charge
+      pe   -1.5554
+      O(0) 0.000000
+      C(4) 0.002588
+      Ca   0.011200
+      Cl   0.160000
+      Na   0.086500
+      Mg   0.018200
+END
+SOLUTION 1
+      units mol/L
+      temp 25
+      pH   0.0
+      pe   0.0
+      O(0) 0.000000
+      C(4) 0.003651
+      Ca   0.002130
+      Cl   0.014660
+      Na   0.009400
+      Mg   0.000500
+END
+EXCHANGE 1
+      CaX2 0.0534
+      NaX  0.0558
+      MgX2 0.0499
+END
+USER_PUNCH 1
+    -headings Ca Mg Na Cl
+    -start
+    10 PUNCH TOT("Ca") * TOT("water") / SOLN_VOL
+    20 PUNCH TOT("Mg") * TOT("water") / SOLN_VOL
+    30 PUNCH TOT("Na") * TOT("water") / SOLN_VOL
+      40 PUNCH TOT("Cl") * TOT("water") / SOLN_VOL
+END
+SELECTED_OUTPUT 1
+    -step flase
+    -high_precision true
+    -water false
+    soln false
+    pH false
+    sim false
+    state false
+    time false
+    pe false
+    distance false
+END

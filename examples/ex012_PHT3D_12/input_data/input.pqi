@@ -1,0 +1,52 @@
+SOLUTION 0
+    units mol/kgw
+    temp 25
+    pH 4.26
+    pe 4.0
+    Tracer 0
+    U(6) 0
+    Na 9.9398e-3
+    N(5) 1.0e-2
+    F 0
+END
+
+SOLUTION 1
+    units mol/kgw
+    temp 25
+    pH 4.26
+    pe 4.0
+    Tracer 1.0e-6
+    U(6) 5.0e-5
+    Na 9.8456e-3
+    N(5) 1.0e-2
+    F 0
+END
+
+SURFACE 1
+    # PhreeqcRM SetUnitsSurface(0) expects moles per representative litre.
+    # These are the official PHT3D A13 bulk concentrations (site inventory
+    # times porosity), corresponding to the phinp.dat mol/kgw site totals.
+    S_aOH 5.197e-4 0 0
+    S_bOH 1.256e-5 0 0
+    S_cOH 1.092e-7 0 0
+    -equilibrate 0
+    -no_edl
+END
+
+USER_PUNCH 1
+    -headings U_6 pH pe Tracer S_aOH S_bOH S_cOH
+    -start
+    10 PUNCH TOT("U(6)")
+    20 PUNCH -LA("H+")
+    30 PUNCH -LA("e-")
+    40 PUNCH TOT("Tracer")
+    50 PUNCH TOT("S_a")
+    60 PUNCH TOT("S_b")
+    70 PUNCH TOT("S_c")
+    -end
+END
+
+SELECTED_OUTPUT 1
+    -reset false
+    -high_precision true
+END

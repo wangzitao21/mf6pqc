@@ -17,6 +17,7 @@ from mf6pqc.coupling.common import (
     cache_concentration_variables,
     cache_solution_iterations,
     cache_source_variables,
+    commit_reaction_concentrations,
     enforce_component_domains,
     finalize_results,
     get_calculated_density,
@@ -441,6 +442,8 @@ def update_sia_after_step(sim, state: SIACouplingState, picard_iterations: int) 
     """Commit diagnostics and medium feedback after a converged SIA step."""
     update_selected_output(sim)
     state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
+    if sim.if_update_porosity_K:
+        commit_reaction_concentrations(sim, state)
     state.mobile_water_volume = state.bulk_cell_volume * sim.porosity * sim.saturation
     save_time_step_results(sim, state.logical_step, state.current_time)
     sim.sia_iterations.append(picard_iterations)

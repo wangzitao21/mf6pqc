@@ -63,9 +63,11 @@ def check_distribution(directory: Path) -> None:
             "LICENSE",
             "mf6pqc/py.typed",
             "tests/test_public_api.py",
-            "examples/PHT3D_E01/input_data/input.pqi",
-            "examples/PHT3D_E08/input_data/official_reference.npz",
-            "examples/Article_Channel2D/modflow_model.py",
+            "examples/README.md",
+            "examples/example_utils.py",
+            "examples/ex001_PHT3D_01/input_data/input.pqi",
+            "examples/ex008_PHT3D_08/input_data/official_reference.npz",
+            "examples/ex021_Brine_Feedback2D/modflow_model.py",
         ):
             if required not in files:
                 raise AssertionError(f"Source archive is missing {required}")

@@ -1,0 +1,67 @@
+SOLUTION 0
+    units       mol/L
+    pH          8.01 charge
+    pe          -0.67
+    Ca          4.71e-4
+    C(4)        2.19e-3
+    S(6)        1.70e-4
+    Na          1.54e-3
+    Al          2.81e-7
+    K           1.00e-5
+    Fe(+2)      6.59e-6
+    Fe(+3)      2.53e-8
+END
+SOLUTION 1
+    pH          3.0 charge
+    pe          17.53
+    units       mol/L
+    Ca          1e-4
+    C(4)        1e-2
+    S(6)        1e-1
+    Na          9.09e-2
+    Al          1.43e-2
+    K           7.67e-5
+    Fe(+2)      1.14e-8
+    Fe(+3)      2.23e-2
+END
+EQUILIBRIUM_PHASES 1
+    # Deliberate B4 variant: all six minerals are equilibrium phases,
+    # even though Xie et al. (2015) specify kinetic reactions.
+    Calcite       0.0  5.9572
+    Gypsum        0.0  0.0
+    Ferrihydrite  0.0  0.0
+    Jarosite      0.0  0.0
+    Gibbsite      0.0  1.5065
+    Siderite      0.0  1.7088
+END
+USER_PUNCH 1
+    -headings Calcite d_Calcite Gypsum d_Gypsum Ferrihydrite d_Ferrihydrite Jarosite d_Jarosite Gibbsite d_Gibbsite Siderite d_Siderite
+    -start
+    10 PUNCH EQUI("Calcite")
+    20 PUNCH EQUI_DELTA("Calcite")
+    30 PUNCH EQUI("Gypsum")
+    40 PUNCH EQUI_DELTA("Gypsum")
+    50 PUNCH EQUI("Ferrihydrite")
+    60 PUNCH EQUI_DELTA("Ferrihydrite")
+    70 PUNCH EQUI("Jarosite")
+    80 PUNCH EQUI_DELTA("Jarosite")
+    90 PUNCH EQUI("Gibbsite")
+    100 PUNCH EQUI_DELTA("Gibbsite")
+    110 PUNCH EQUI("Siderite")
+    120 PUNCH EQUI_DELTA("Siderite")
+END
+SELECTED_OUTPUT 1
+    -step false
+    -high_precision false
+    -water false
+    soln false
+    pH false
+    sim false
+    state false
+    time false
+    pe false
+    distance false
+END
+PRINT
+    -warnings 0
+END

@@ -20,20 +20,27 @@
   <a href="#扩展自己的模型">扩展自己的模型</a>
 </p>
 
-MF6PQC 在保留 FloPy 和 PHREEQC 建模方式的基础上，协调水流、运移、化学反应及物性更新。它面向需要比较水文地球化学反馈的研究：溶液密度如何改变流动，矿物溶解与沉淀如何改变孔隙度，以及这些变化如何进一步影响渗透系数和扩散。
+MF6PQC 将 MODFLOW 6 的地下水流动与溶质运移连接到 PhreeqcRM 的地球化学计算，保留 FloPy 和 PHREEQC 的建模方式。通过 SNIA、SIA 或 Strang 分裂推进时间，并按案例配置更新密度、孔隙度、渗透系数和扩散系数，支持比较不同耦合算法与物性反馈。
 
 <table>
   <tr>
-    <th>非均质含水层中的反应运移</th>
-    <th>蒸发驱动的密度环流</th>
-    <th>优势通道与整体响应</th>
+    <th width="33%">非均质反应运移</th>
+    <th width="33%">蒸发驱动的密度环流</th>
+    <th width="33%">优势通道与反馈响应</th>
   </tr>
   <tr>
-    <td><a href="examples/PHT3D_E10/plot.ipynb"><img src="examples/PHT3D_E10/output/figures/figure_05.png" width="270" alt="二维含水层反应运移结果" /></a></td>
-    <td><a href="examples/Hamann2015/plot.ipynb"><img src="examples/Hamann2015/output/figures/figure_06.png" width="270" alt="盐湖密度分布与地下水流线" /></a></td>
-    <td><a href="examples/Article_Channel2D/plot.ipynb"><img src="examples/Article_Channel2D/output/figures/figure_12.png" width="270" alt="卤水开采中的优势通道和反馈响应" /></a></td>
+    <td align="center" valign="middle"><a href=".github/assets/ex010-reactive-transport.png"><img src=".github/assets/ex010-reactive-transport.png" width="280" alt="PHT3D 10：非均质含水层中的多组分分布及参考结果对比" /></a></td>
+    <td align="center" valign="middle"><a href=".github/assets/ex018-density-circulation.png"><img src=".github/assets/ex018-density-circulation.png" width="280" alt="Hamann 2015：蒸发浓缩下的密度分布和地下水流线随时间演化" /></a></td>
+    <td align="center" valign="middle"><a href=".github/assets/ex021-brine-feedback.png"><img src=".github/assets/ex021-brine-feedback.png" width="280" alt="卤水反馈案例：渗透系数变化、优势通道及四种反馈情景的整体响应" /></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="examples/ex010_PHT3D_10/plot.ipynb"><b>ex010 · PHT3D 10</b></a><br/>多组分运移与基准对照</td>
+    <td align="center"><a href="examples/ex018_Hamann2015/plot.ipynb"><b>ex018 · Hamann 2015</b></a><br/>盐水羽流与长期密度环流</td>
+    <td align="center"><a href="examples/ex021_Brine_Feedback2D/plot.ipynb"><b>ex021 · Brine Feedback</b></a><br/>矿物溶解与水力性质演化</td>
   </tr>
 </table>
+
+点击图片查看原图，点击案例名打开绘图 notebook。
 
 ## 模型如何连接
 
@@ -78,6 +85,16 @@ cd mf6pqc
 python -m pip install -e ".[examples]"
 ```
 
+### 使用已有结果绘图
+
+如果本地案例已包含保存结果或 `saved_results*.zip` 归档，安装上述案例依赖后即可打开 notebook：
+
+```bash
+jupyter lab examples/ex018_Hamann2015/plot.ipynb
+```
+
+从第一个单元开始依次执行即可重绘。此流程不运行模型，也无需配置 MODFLOW 动态库；缺少结果时，需要先取得相应归档或按下节运行模型。
+
 ### 配置 MODFLOW 6.8.0
 
 从 [USGS 官方 MODFLOW 6.8.0 发布页](https://github.com/MODFLOW-ORG/modflow6/releases/tag/6.8.0) 下载与操作系统相符的发行包，将其中的动态库和可执行文件放到仓库的 `bin/mf6.8.0/`。PyPI 安装不会自动安装 MODFLOW 动态库。
@@ -92,25 +109,25 @@ python -m pip install -e ".[examples]"
 
 ```powershell
 $env:MF6PQC_BIN = 'C:\modflow\mf6.8.0\bin'
-python examples/PHT3D_E01/run.py
+python examples/ex001_PHT3D_01/run.py
 ```
 
-所有案例默认使用 6.8.0。Windows 官方发行包中的程序会显示构建字符串 `6.8.0+8680167.dirty`；其 `libmf6.dll` 的 SHA-256 为 `624995b7f592dacd52abe37e1c10c5ff52ecde1d9b188447343c17396e69bda2`。核对版本时应同时检查发行包来源和文件摘要。
+案例默认使用 MODFLOW 6.8.0。动态库与可执行文件应来自同一发行包；运行前确认路径与操作系统匹配。
 
-### 运行第一个案例
+### 运行第一个耦合模型
 
 在仓库根目录执行：
 
 ```bash
-python examples/PHT3D_E01/run.py
-jupyter lab examples/PHT3D_E01/plot.ipynb
+python examples/ex001_PHT3D_01/run.py
+jupyter lab examples/ex001_PHT3D_01/plot.ipynb
 ```
 
 `run.py` 构建并运行耦合模型，`plot.ipynb` 读取保存结果、绘图并进行数值核对。也可以进入案例目录后执行 `python run.py`。
 
 ## 案例与论文图
 
-`examples/` 包含 22 个独立案例。每个案例的顶层结构一致：
+`examples/` 包含 22 个案例。每个案例根目录统一保留三个文件和三个文件夹：
 
 ```text
 案例名/
@@ -122,31 +139,33 @@ jupyter lab examples/PHT3D_E01/plot.ipynb
 └── simulation/       # MODFLOW 输入、数值输出及无损归档
 ```
 
+配置与建模函数放在 `modflow_model.py` 或 `run.py`，批量对比逻辑放在 `run.py`，后处理与绘图放在 `plot.ipynb`。案例共用 `examples/` 根目录的 [example_utils.py](examples/example_utils.py)，用于路径定位、读取结果和归档恢复；使用或复制案例时需保留该文件。
+
 | 案例 | 主要内容 | 论文图 |
 | --- | --- | --- |
-| [Splitting_KineticDecay](examples/Splitting_KineticDecay/plot.ipynb) | 动力学衰减问题中的 SNIA、SIA、Strang 精度与开销 | 图 3 |
-| [PHT3D_E03](examples/PHT3D_E03/plot.ipynb) | 含铁碳酸盐体系的一维反应运移 | 图 4 |
-| [PHT3D_E10](examples/PHT3D_E10/plot.ipynb) | 非均质含水层中的二维多组分反应运移 | 图 5 |
-| [Hamann2015](examples/Hamann2015/plot.ipynb) | 蒸发浓缩、密度环流与蒸发岩矿物分带 | 图 6–7 |
-| [Xie2015_B3](examples/Xie2015_B3/plot.ipynb) | 多矿物反应、孔隙度及水力响应 | 图 8 |
-| [Xie2015_B4](examples/Xie2015_B4/plot.ipynb) | 矿物分布与有效扩散系数反馈 | 图 9 |
-| [Article_Channel2D](examples/Article_Channel2D/plot.ipynb) | 非均质蒸发岩溶浸中的四种反馈组合 | 图 10–12 |
-| [PHT3D_E01](examples/PHT3D_E01/plot.ipynb)–[PHT3D_E13](examples/PHT3D_E13/plot.ipynb) | PHT3D 基准系列；各案例保留独立输入和参考数据 | 含上述图 4–5 |
-| [Xie2015_B1](examples/Xie2015_B1/plot.ipynb)、[Xie2015_B2](examples/Xie2015_B2/plot.ipynb) | 矿物反应与水力性质演化的补充对照 | — |
-| [Splitting_RedoxFront2D](examples/Splitting_RedoxFront2D/plot.ipynb) | 二维氧化还原前沿的分裂误差比较 | — |
-| [GWE_VSC_Reactive](examples/GWE_VSC_Reactive/plot.ipynb) | 温度、反应与黏度反馈 | — |
+| [ex019_Splitting_KineticDecay1D](examples/ex019_Splitting_KineticDecay1D/plot.ipynb) | 动力学衰减问题中的 SNIA、SIA、Strang 精度与开销 | 图 3 |
+| [ex003_PHT3D_03](examples/ex003_PHT3D_03/plot.ipynb) | 含铁碳酸盐体系的一维反应运移 | 图 4 |
+| [ex010_PHT3D_10](examples/ex010_PHT3D_10/plot.ipynb) | 非均质含水层中的二维多组分反应运移 | 图 5 |
+| [ex018_Hamann2015](examples/ex018_Hamann2015/plot.ipynb) | 蒸发浓缩、密度环流与蒸发岩矿物分带 | 图 6–7 |
+| [ex016_Xie2015_B3](examples/ex016_Xie2015_B3/plot.ipynb) | 多矿物反应、孔隙度及水力响应 | 图 8 |
+| [ex017_Xie2015_B4](examples/ex017_Xie2015_B4/plot.ipynb) | 矿物分布与有效扩散系数反馈 | 图 9 |
+| [ex021_Brine_Feedback2D](examples/ex021_Brine_Feedback2D/plot.ipynb) | 非均质蒸发岩溶浸中的四种反馈组合 | 图 10–12 |
+| [ex001_PHT3D_01](examples/ex001_PHT3D_01/plot.ipynb)–[ex013_PHT3D_13](examples/ex013_PHT3D_13/plot.ipynb) | PHT3D 基准系列；各案例保留独立输入和参考数据 | 含上述图 4–5 |
+| [ex014_Xie2015_B1](examples/ex014_Xie2015_B1/plot.ipynb)、[ex015_Xie2015_B2](examples/ex015_Xie2015_B2/plot.ipynb) | 矿物反应与水力性质演化的补充对照 | — |
+| [ex020_Splitting_RedoxFront2D](examples/ex020_Splitting_RedoxFront2D/plot.ipynb) | 二维氧化还原前沿的分裂误差比较 | — |
+| [ex999_Thermal_ReactiveColumn1D](examples/ex999_Thermal_ReactiveColumn1D/plot.ipynb) | 温度、反应与黏度反馈 | — |
 
 图 1–2 为概念与程序结构示意图，不对应独立的案例运行结果。
 
 ## 复现绘图
 
-每本 `plot.ipynb` 都可以从上到下独立执行。绘图代码只读取本案例内的数据，不依赖外部论文目录。论文图保留原有配色、字体、面板布局、单位与输出尺寸，导出到 `output/figures/`。
+在已有结果齐全时，从第一个单元开始依次执行 `plot.ipynb`。绘图读取本案例的结果和参考数据，论文图导出到 `output/figures/`；重新执行绘图会更新导出的图片。
 
-仓库在 `output/` 和 `simulation/` 中提供 `saved_results*.zip` 无损归档。笔记本首先补齐缺失的归档文件，然后读取原始数组、水头或流量预算；已存在的结果不会被归档覆盖。因此，仅重绘保存结果无需启动 MODFLOW 或 PHREEQC，也无需配置 MODFLOW 动态库。
+如果 `output/` 或 `simulation/` 中有 `saved_results*.zip` 归档，notebook 会先恢复缺失文件，再读取数组、水头或流量预算，保留已经存在的结果。仅重绘无需启动 MODFLOW 或 PHREEQC；没有保存结果时，需先取得对应归档或运行案例。
 
-重新计算时运行案例的 `run.py`，随后重新执行 `plot.ipynb`，即可绘制新结果。Hamann、Xie、PHT3D_E11–E13 和卤水案例计算量较大，可先使用归档结果检查绘图和数据结构。历史保存结果保留其原始数值，不应据此声称已用新的求解器版本重新计算。
+重新计算时先执行案例的 `run.py`，再运行 `plot.ipynb`。Hamann、Xie、PHT3D 11–13 和卤水案例计算量较大，可优先用已有结果检查绘图。历史归档对应原始运行配置，重新绘图不会改变其求解器版本或数值结果。
 
-结果数组的解释以案例内字段为准：`results_headings.txt` 给出变量顺序，`results_times.npy` 或案例的时间配置给出保存时刻。矿物的体积基准、孔隙水浓度和密度单位在绘图代码中显式转换。PHT3D 与 MIN3P 参考结果来自原案例的对照数据；精度偏差也在笔记本中保留显示。
+`results_headings.txt` 给出变量顺序，`results_times.npy` 或案例专用时间文件给出保存时刻。例如 Hamann 的旧结果使用 `result_times_years.npy`，绘图代码兼容以年保存的时间。矿物体积基准、浓度和密度单位以各 notebook 中的转换为准；PHT3D、MIN3P 等参考结果来自案例中的对照数据。
 
 ### 卤水案例的四种情景
 
@@ -159,20 +178,20 @@ jupyter lab examples/PHT3D_E01/plot.ipynb
 
 ```bash
 # 依次执行四种情景；相同配置且已完成的标签会直接复用。
-python examples/Article_Channel2D/run.py
+python examples/ex021_Brine_Feedback2D/run.py
 
 # 单独创建一个新标签，保留原情景结果。
-python examples/Article_Channel2D/run.py --scenario S11 --label S11_repeat --threads 2
+python examples/ex021_Brine_Feedback2D/run.py --scenario S11 --label S11_repeat --threads 2
 
 # 从现有四种情景的结果重绘论文图。
-jupyter lab examples/Article_Channel2D/plot.ipynb
+jupyter lab examples/ex021_Brine_Feedback2D/plot.ipynb
 ```
 
 该案例采用固定体积、准稳态水力调整与经验孔隙度–渗透系数关系。其边界、化学体系、质量核对和适用范围在笔记本中说明。
 
 ## 扩展自己的模型
 
-从物理过程接近的案例开始，复制完整案例目录，并依次修改：
+在 `examples/` 下复制一个物理过程接近的完整案例目录，例如命名为 `ex022_MyCase`，与公共文件 `example_utils.py` 保持同级。复制后，先同步修改 Python 中的案例包导入和 notebook 中的 `CASE_NAME`，再依次调整：
 
 1. 在 `modflow_model.py` 中设置网格、边界、水力参数、时间离散和运移包。
 2. 在 `input_data/` 中配置化学数据库、PHREEQC 输入、初始场与对照数据。
@@ -184,14 +203,14 @@ jupyter lab examples/Article_Channel2D/plot.ipynb
 ## 检查与依赖
 
 ```bash
-# 检查全部案例的目录、笔记本语法与无求解器副作用的导入。
+# 检查全部案例的目录、Python/笔记本语法及受保护导入，不运行模型。
 python scripts/check_examples.py
 
 # 对选定案例进行独立回归计算，结果写入指定目录。
-python scripts/check_examples.py --native PHT3D_E01 PHT3D_E08 --output-root .release-checks/native
+python scripts/check_examples.py --native ex001_PHT3D_01 ex008_PHT3D_08 --output-root .release-checks/native
 ```
 
-回归命令提供 PHT3D_E01–E10、GWE 及两个分裂算法案例。长时案例由各自的 `run.py` 显式启动。完整依赖范围见 [pyproject.toml](pyproject.toml)；一个已验证的 Windows 组合为 Python 3.12.9、NumPy 2.2.1、FloPy 3.10.0、modflowapi 1.0.1、PhreeqcRM 0.0.18 和 MODFLOW 6.8.0。
+静态检查不执行 `main()` 或 notebook，也不运行求解器；验证完整绘图需执行对应 notebook。只有显式指定 `--native` 才会运行模型，支持 PHT3D 01–10、两个分裂算法案例和热耦合案例。其他案例通过各自的 `run.py` 启动。完整依赖与版本范围见 [pyproject.toml](pyproject.toml)。
 
 ## 许可与引用
 
@@ -200,5 +219,3 @@ MF6PQC 采用 [GPL-3.0-only](LICENSE) 许可。MODFLOW 6、PhreeqcRM、化学数
 - [MF6PQC 源代码与版本](https://github.com/wangzitao21/mf6pqc)
 - [MODFLOW 6.8.0 软件引用](https://doi.org/10.5066/P1PGE9XW)
 - [问题反馈](https://github.com/wangzitao21/mf6pqc/issues)
-
-图标以含水层网格、水流路径与矿物晶体表现 MF6PQC 的耦合对象。

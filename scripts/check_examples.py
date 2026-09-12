@@ -1,4 +1,4 @@
-"""Check self-contained example layouts and safe imports, or run selected cases.
+"""Check example layouts and safe imports, or explicitly run selected cases.
 
 Long-running benchmarks are excluded from this native regression command.
 """
@@ -9,81 +9,208 @@ import argparse
 import ast
 import json
 import os
+import platform
+import re
+import runpy
 import subprocess
 import sys
 import time
+from contextlib import ExitStack
+from importlib.abc import MetaPathFinder
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples"
+PHT3D_SMOKE_CASES = tuple(f"ex{i:03}_PHT3D_{i:02}" for i in range(1, 11))
 NATIVE_CASES = {
     name: [("run.py", [])]
     for name in [
-        *(f"PHT3D_E{i:02}" for i in range(1, 11)),
-        "GWE_VSC_Reactive",
-        "Splitting_KineticDecay",
-        "Splitting_RedoxFront2D",
+        *PHT3D_SMOKE_CASES,
+        "ex999_Thermal_ReactiveColumn1D",
+        "ex019_Splitting_KineticDecay1D",
+        "ex020_Splitting_RedoxFront2D",
     ]
 }
-ALLOWED_FILES = {"modflow_model.py", "run.py", "plot.ipynb"}
-ALLOWED_ENTRIES = ALLOWED_FILES | {"input_data", "output", "simulation"}
+REQUIRED_FILES = {"modflow_model.py", "run.py", "plot.ipynb"}
+OPTIONAL_FILES = {
+    "README.md",
+    "config.py",
+    "comparison.py",
+    "chemistry.py",
+    "simulation.py",
+    "analysis.py",
+}
+RUNTIME_DIRECTORIES = {"output", "simulation"}
+CACHE_DIRECTORIES = {"__pycache__", ".ipynb_checkpoints"}
+SHARED_FILES = {"example_utils.py", "README.md"}
+ALLOWED_ENTRIES = (
+    REQUIRED_FILES | OPTIONAL_FILES | RUNTIME_DIRECTORIES | CACHE_DIRECTORIES | {"input_data"}
+)
 
 
-def check_static(*, allow_notebook_outputs: bool = False) -> list[dict]:
-    """Parse all notebooks and import each case with native creation forbidden."""
+def discover_cases(examples: Path) -> list[Path]:
+    """Validate source layouts without requiring generated runtime directories."""
+    cases = []
+    for entry in sorted(examples.iterdir()):
+        if entry.is_file() and entry.name in SHARED_FILES:
+            continue
+        if entry.is_dir() and entry.name in CACHE_DIRECTORIES:
+            continue
+        if not entry.is_dir() or not re.fullmatch(r"ex\d{3}_[A-Za-z0-9_]+", entry.name):
+            raise AssertionError(f"Unexpected entry in examples: {entry.name}")
+        unexpected = {path.name for path in entry.iterdir()} - ALLOWED_ENTRIES
+        if unexpected:
+            raise AssertionError(f"{entry.name}: unexpected entries: {sorted(unexpected)}")
+        for name in REQUIRED_FILES:
+            if not (entry / name).is_file():
+                raise AssertionError(f"{entry.name}: missing {name}")
+        if not (entry / "input_data").is_dir():
+            raise AssertionError(f"{entry.name}: missing input_data directory")
+        for name in RUNTIME_DIRECTORIES | CACHE_DIRECTORIES:
+            if (entry / name).exists() and not (entry / name).is_dir():
+                raise AssertionError(f"{entry.name}: {name} must be a directory")
+        for name in OPTIONAL_FILES:
+            if (entry / name).exists() and not (entry / name).is_file():
+                raise AssertionError(f"{entry.name}: {name} must be a file")
+        cases.append(entry)
+    if not cases:
+        raise AssertionError("No example cases found")
+    if not (examples / "example_utils.py").is_file():
+        raise AssertionError("Missing shared example_utils.py")
+    return cases
+
+
+def _import_without_solvers(scripts: list[Path]) -> None:
+    """Import modules with backend creation, model runs and child processes blocked."""
+    import flopy
+
+    from mf6pqc.backends import NativeBackendFactory
+
+    # NumPy/SciPy query platform information during import. On Windows,
+    # a cold uname cache can launch the harmless system command "ver".
+    # Resolve it (and the lazy processor field) before blocking every
+    # child process launched by the example modules.
+    platform.processor()
+
+    attempted = []
+
+    def forbidden(*args, **kwargs):
+        message = "Solver creation or execution attempted during import"
+        attempted.append(message)
+        raise AssertionError(message)
+
+    class NativeImportGuard(MetaPathFinder):
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname.split(".", 1)[0] in {"phreeqcrm", "modflowapi"}:
+                forbidden()
+            return None
+
+    guard = NativeImportGuard()
+    with ExitStack() as stack:
+        for owner, attribute in (
+            (NativeBackendFactory, "create_phreeqcrm"),
+            (NativeBackendFactory, "create_modflow_api"),
+            (NativeBackendFactory, "load_modflow_simulation"),
+            (flopy.mf6.MFSimulation, "__init__"),
+            (flopy.mf6.MFSimulation, "write_simulation"),
+            (flopy.mf6.MFSimulation, "run_simulation"),
+            (flopy, "run_model"),
+            (flopy.mbase, "run_model"),
+            (subprocess, "Popen"),
+            (os, "system"),
+        ):
+            stack.enter_context(patch.object(owner, attribute, side_effect=forbidden))
+        # Normal check subprocesses have neither native package imported. Also
+        # guard existing module objects for callers using this helper directly.
+        for module_name, attribute in (("phreeqcrm", "PhreeqcRM"), ("modflowapi", "ModflowApi")):
+            if module_name in sys.modules:
+                stack.enter_context(
+                    patch.object(sys.modules[module_name], attribute, side_effect=forbidden)
+                )
+        sys.meta_path.insert(0, guard)
+        stack.callback(sys.meta_path.remove, guard)
+        for script in scripts:
+            runpy.run_path(str(script), run_name="__import_check__")
+        if attempted:
+            raise AssertionError(attempted[0])
+
+
+def check_imports(scripts: list[Path], *, cwd: Path) -> None:
+    """Give each case a fresh module cache without invoking its main entry point."""
+    code = """import sys
+from pathlib import Path
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, str(Path(sys.argv[1]) / 'examples'))
+from scripts.check_examples import _import_without_solvers
+_import_without_solvers([Path(filename) for filename in sys.argv[2:]])
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", code, str(ROOT), *map(str, scripts)],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=45,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"},
+    )
+    if completed.returncode:
+        raise AssertionError(f"{cwd.name}: import check failed\n{completed.stderr}")
+
+
+def check_syntax(paths: list[Path]) -> None:
+    """Parse Python files and transformed notebook code without executing cells."""
     from IPython.core.inputtransformer2 import TransformerManager
 
     transformer = TransformerManager()
-    reports = []
-    for case in sorted(EXAMPLES.iterdir()):
-        if not case.is_dir() or not (case / "run.py").is_file():
-            raise AssertionError(f"Unexpected entry in examples: {case.name}")
-        if {p.name for p in case.iterdir()} != ALLOWED_ENTRIES:
-            raise AssertionError(f"{case.name}: expected exactly six case entries")
-        for name in ("input_data", "output", "simulation"):
-            if not (case / name).is_dir():
-                raise AssertionError(f"{case.name}: missing {name}")
-        scripts = list(case.glob("*.py"))
-        if {p.name for p in scripts} - ALLOWED_FILES:
-            raise AssertionError(f"{case.name}: nonstandard Python filenames")
-        notebook = json.loads((case / "plot.ipynb").read_text(encoding="utf-8"))
-        for cell in notebook["cells"]:
-            if cell["cell_type"] == "code":
+    for path in paths:
+        if path.suffix == ".py":
+            ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        elif path.suffix == ".ipynb":
+            notebook = json.loads(path.read_text(encoding="utf-8-sig"))
+            for index, cell in enumerate(notebook["cells"], start=1):
+                if cell["cell_type"] != "code":
+                    continue
                 if any(o.get("output_type") == "error" for o in cell.get("outputs", [])):
-                    raise AssertionError(f"{case.name}: notebook includes an execution error")
-                ast.parse(transformer.transform_cell("".join(cell["source"])))
-        code = """import runpy, sys
-sys.dont_write_bytecode = True
-from unittest.mock import patch
-sys.path.insert(0, sys.argv[1])
-from mf6pqc.backends import NativeBackendFactory
-with (
-    patch.object(NativeBackendFactory, 'create_phreeqcrm', side_effect=AssertionError('chemistry solver created during import')),
-    patch.object(NativeBackendFactory, 'create_modflow_api', side_effect=AssertionError('MODFLOW solver created during import')),
-):
-    for filename in sys.argv[2:]:
-        runpy.run_path(filename, run_name='__import_check__')
-"""
-        # The package import is explicit; every example gets a fresh module cache.
-        completed = subprocess.run(
-            [sys.executable, "-c", code, str(ROOT), *map(str, scripts)],
-            cwd=case,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=45,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"},
+                    raise AssertionError(f"{path}: cell {index} includes an execution error")
+                ast.parse(
+                    transformer.transform_cell("".join(cell["source"])),
+                    filename=f"{path}:cell {index}",
+                )
+
+
+def check_static(*, allow_notebook_outputs: bool = False) -> list[dict]:
+    """Parse all source code and import cases; saved notebook figures are allowed."""
+    cases = discover_cases(EXAMPLES)
+    shared = sorted(EXAMPLES.glob("*.py"))
+    check_syntax(shared)
+    check_imports(shared, cwd=EXAMPLES)
+    reports = []
+    for case in cases:
+        source_paths = sorted(
+            path
+            for path in case.rglob("*")
+            if path.is_file()
+            and path.suffix in {".py", ".ipynb"}
+            and path.relative_to(case).parts[0] not in RUNTIME_DIRECTORIES
+            and not CACHE_DIRECTORIES.intersection(path.relative_to(case).parts)
         )
-        if completed.returncode:
-            raise AssertionError(f"{case.name}: import check failed\n{completed.stderr}")
+        check_syntax(source_paths)
+        check_imports(sorted(case.glob("*.py")), cwd=case)
         reports.append(
             {"case": case.name, "static_imports": "passed", "simulation_executed": False}
         )
-        print(f"{case.name}: layout, notebook syntax, guarded imports passed", flush=True)
+        print(f"{case.name}: layout, Python/notebook syntax, guarded imports passed", flush=True)
     return reports
 
 
 def check_native(names: list[str], output_root: Path, timeout: float) -> list[dict]:
+    """Run only explicitly named catalogue cases in an isolated result directory."""
+    if not names or set(names) - NATIVE_CASES.keys():
+        raise ValueError("Select at least one supported native case explicitly")
+    if timeout <= 0:
+        raise ValueError("timeout must be positive")
     reports = []
     logs = output_root / "logs"
     logs.mkdir(parents=True, exist_ok=True)

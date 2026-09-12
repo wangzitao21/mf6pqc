@@ -9,6 +9,7 @@ from mf6pqc.backends import initialize_modflow6
 from mf6pqc.coupling.common import (
     build_standard_state,
     cache_basic_geometry,
+    commit_reaction_concentrations,
     enforce_component_domains,
     finalize_results,
     get_calculated_density,
@@ -21,7 +22,6 @@ from mf6pqc.coupling.common import (
     solve_modflow_solutions,
     update_selected_output,
     validate_setup,
-    write_concentrations_to_modflow,
 )
 from mf6pqc.coupling.state import StandardCouplingState
 from mf6pqc.energy import (
@@ -67,10 +67,8 @@ def thermal_time_step(sim, state: StandardCouplingState) -> None:
     # run_reaction_step synchronizes the post-GWE temperature before RunCells.
     run_reaction_step(sim, state.transported, state.reacted, reaction_start_time, dt)
     update_selected_output(sim)
-    write_concentrations_to_modflow(
-        state.concentration_variables, state.species_slices, state.reacted
-    )
     state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
+    commit_reaction_concentrations(sim, state)
     save_time_step_results(sim, state.logical_step, state.current_time)
     save_energy_time_step_results(sim, state.logical_step)
     state.logical_step += 1

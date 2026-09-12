@@ -80,6 +80,7 @@ class StrangOrderingTests(unittest.TestCase):
         )
         sim = SimpleNamespace(
             if_update_density=False,
+            if_update_porosity_K=False,
             components=["A"],
             signed_components=frozenset(),
             progress_interval=100,
@@ -138,7 +139,7 @@ class StrangOrderingTests(unittest.TestCase):
             ),
             patch("mf6pqc.coupling.strang.update_selected_output"),
             patch(
-                "mf6pqc.coupling.strang.write_concentrations_to_modflow",
+                "mf6pqc.coupling.common.write_concentrations_to_modflow",
                 side_effect=write_concentrations,
             ),
             patch(

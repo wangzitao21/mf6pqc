@@ -12,6 +12,7 @@ from mf6pqc.constants import MIN_TIME_STEP
 from mf6pqc.coupling.common import (
     build_standard_state,
     cache_basic_geometry,
+    commit_reaction_concentrations,
     enforce_component_domains,
     finalize_results,
     get_calculated_density,
@@ -24,7 +25,6 @@ from mf6pqc.coupling.common import (
     synchronize_phreeqcrm_solution,
     update_selected_output,
     validate_setup,
-    write_concentrations_to_modflow,
 )
 from mf6pqc.coupling.state import StandardCouplingState
 from mf6pqc.exceptions import CouplingError
@@ -121,15 +121,13 @@ def strang_time_step(sim, state: StandardCouplingState) -> None:
         reaction_dt,
     )
     update_selected_output(sim)
-    write_concentrations_to_modflow(
-        state.concentration_variables, state.species_slices, state.reacted
-    )
 
     # Reaction-owned medium properties belong to the midpoint state and must
     # affect the second transport half-step for a true T/2 -> R -> T/2
     # composition.  Deferring them to the logical endpoint is a lagged SNIA
     # feedback, not Strang splitting.
     state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
+    commit_reaction_concentrations(sim, state)
     density = get_calculated_density(sim) if sim.if_update_density else None
     solve_transport_substep(
         sim,
