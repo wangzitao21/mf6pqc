@@ -31,3 +31,4 @@ htmlcov/
 /examples/*/output_original_*/
 
 /examples/*/simulation_original_*/
+tmp/
