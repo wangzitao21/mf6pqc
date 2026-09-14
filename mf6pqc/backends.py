@@ -1,21 +1,16 @@
-"""Backend creation and lifecycle boundaries.
-
-Only this module knows how the concrete ``phreeqcrm`` and ``modflowapi``
-packages are constructed.  Coupling algorithms operate on their public API
-surface, which keeps the numerical loop testable without loading native
-libraries.
-"""
-
 from __future__ import annotations
 
 import contextlib
 import logging
 import numbers
 import os
+import warnings
 from dataclasses import dataclass
-from functools import wraps
+from functools import cache, wraps
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
+
+import numpy as np
 
 from mf6pqc.constants import (
     PHREEQCRM_REBALANCE_FRACTION,
@@ -27,27 +22,45 @@ from mf6pqc.exceptions import BackendError, ConfigurationError
 _logger = logging.getLogger(__name__)
 
 
-class CheckedPhreeqcRM:
-    """Turn negative PhreeqcRM status codes into Python exceptions.
+def advance_chemistry(backend, concentrations, start_time, time_step, temperature=None):
+    if temperature is not None:
+        backend.SetTemperature(temperature)
+    backend.SetConcentrations(concentrations)
+    backend.SetTime(start_time)
+    backend.SetTimeStep(time_step)
+    backend.RunCells()
+    return backend.GetConcentrations(), backend.GetSelectedOutput()
 
-    PhreeqcRM's default error mode returns a status instead of raising. Getter
-    values (which can legitimately be negative) retain their native semantics.
-    Methods are cached so the transport loop adds no repeated wrapper creation.
-    The underlying solver remains accessible through ``backend``.
-    """
+
+class CheckedPhreeqcRM:
 
     def __init__(self, backend: Any) -> None:
         self.backend = backend
+        self._read_cache: dict[str, Any] = {}
+        self._concentration_buffer = None
 
     def __getattr__(self, name: str):
         attribute = getattr(self.backend, name)
-        if not callable(attribute) or name.startswith("Get"):
+        if not callable(attribute):
+            return attribute
+        if name in {"GetConcentrations", "GetSelectedOutput"}:
+
+            @wraps(attribute)
+            def read(*args, **kwargs):
+                if not args and not kwargs and name in self._read_cache:
+                    return self._read_cache.pop(name)
+                return getattr(self.backend, name)(*args, **kwargs)
+
+            setattr(self, name, read)
+            return read
+        if name.startswith("Get"):
             return attribute
 
         backend = self.backend
 
         @wraps(attribute)
         def checked(*args, **kwargs):
+            self._read_cache.clear()
             result = attribute(*args, **kwargs)
             if isinstance(result, numbers.Integral) and result < 0:
                 detail = ""
@@ -58,6 +71,76 @@ class CheckedPhreeqcRM:
 
         setattr(self, name, checked)
         return checked
+
+    def advance(self, concentrations, start_time, time_step, temperature=None) -> None:
+        self._read_cache.clear()
+        advance = getattr(type(self.backend), "advance", None)
+        if advance is None:
+            reacted, selected = advance_chemistry(
+                self, concentrations, start_time, time_step, temperature
+            )
+        else:
+            reacted, selected = advance(
+                self.backend, concentrations, start_time, time_step, temperature
+            )
+        self._read_cache.update(GetConcentrations=reacted, GetSelectedOutput=selected)
+
+    def advance_into(
+        self, concentrations, start_time, time_step, reacted, selected, temperature=None
+    ):
+        self._read_cache.clear()
+        advance = getattr(type(self.backend), "advance_into", None)
+        if advance is None:
+            values, output = advance_chemistry(
+                self, concentrations, start_time, time_step, temperature
+            )
+            if np.shape(values) != reacted.shape or np.size(output) != selected.size:
+                raise BackendError("Chemistry output shape changed during reaction")
+            np.copyto(reacted, values)
+            np.copyto(selected.ravel(), np.asarray(output).ravel())
+        else:
+            advance(
+                self.backend, concentrations, start_time, time_step, reacted, selected, temperature
+            )
+        self._concentration_buffer = reacted
+        self._read_cache.update(GetConcentrations=reacted, GetSelectedOutput=selected.ravel())
+
+    def commit_porosity(self, porosity) -> None:
+        self._read_cache.clear()
+        buffer = self._concentration_buffer
+        commit_into = getattr(type(self.backend), "commit_porosity_into", None)
+        if buffer is not None and commit_into is not None:
+            commit_into(self.backend, porosity, buffer)
+            concentrations = buffer
+        else:
+            commit = getattr(type(self.backend), "commit_porosity", None)
+            if commit is None:
+                self.SetPorosity(porosity)
+                concentrations = self.backend.GetConcentrations()
+            else:
+                concentrations = commit(self.backend, porosity)
+        self._read_cache["GetConcentrations"] = concentrations
+
+
+class BatchedChemistryBackend(Protocol):
+    def advance_into(
+        self, concentrations, start_time, time_step, reacted, selected, temperature=None
+    ) -> None: ...
+    def commit_porosity_into(self, porosity, concentrations) -> None: ...
+
+
+def solve_prepared_modflow(modflow_api, solution_id, maximum):
+    converged = False
+    iterations = 0
+    try:
+        while iterations < maximum:
+            converged = bool(modflow_api.solve(solution_id))
+            iterations += 1
+            if converged:
+                break
+    finally:
+        modflow_api.finalize_solve(solution_id)
+    return converged, iterations
 
 
 @runtime_checkable
@@ -79,6 +162,11 @@ class NativeBackendFactory:
     """Default factory backed by the installed native Python packages."""
 
     def create_phreeqcrm(self, nxyz: int, nthreads: int) -> Any:
+        warnings.filterwarnings(
+            "ignore",
+            message=r"^builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute$",
+            category=DeprecationWarning,
+        )
         import phreeqcrm
 
         return phreeqcrm.PhreeqcRM(nxyz, nthreads)
@@ -91,7 +179,12 @@ class NativeBackendFactory:
     def load_modflow_simulation(self, modflow_api: Any) -> Any:
         import modflowapi
 
-        return modflowapi.extensions.ApiSimulation.load(modflow_api)
+        read_names = modflow_api.get_input_var_names
+        modflow_api.get_input_var_names = cache(read_names)
+        try:
+            return modflowapi.extensions.ApiSimulation.load(modflow_api)
+        finally:
+            modflow_api.get_input_var_names = read_names
 
 
 def file_fingerprint(path: str | Path) -> dict[str, str | int]:
@@ -165,7 +258,7 @@ def initialize_phreeqcrm(sim) -> None:
         chemistry.SetRebalanceFraction(PHREEQCRM_REBALANCE_FRACTION)
         _logger.info(f"Loading Phreeqc database: {database}")
         chemistry.LoadDatabase(database)
-        chemistry.SetPrintChemistryOn(True, False, False)
+        chemistry.SetPrintChemistryOn(bool(sim.print_chemistry_mask.any()), False, False)
         _logger.info(f"Running chemistry definition file: {chemistry_input}")
         chemistry.RunFile(True, True, True, chemistry_input)
         chemistry.RunString(True, False, True, "DELETE; -all")

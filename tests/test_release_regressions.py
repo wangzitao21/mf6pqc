@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from mf6pqc import MF6PQC
+from mf6pqc import MF6PQC, CouplingHooks, CouplingMethod
 from mf6pqc.backends import CheckedPhreeqcRM, validate_modflow_workspace
 from mf6pqc.coupling.common import build_time_step_schedule, update_selected_output
 from mf6pqc.coupling.strang import validate_strang_schedule
@@ -111,6 +111,30 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertIsNone(sim.phreeqc_rm)
         self.assertIsNone(sim.modflow_api)
         self.assertEqual(self.factory.chemistry.closed, 1)
+
+    def test_hook_failure_closes_backends_and_clears_run_state(self):
+        sim = self.simulator()
+        sim.setup({"solution": 0})
+
+        def fail(sim, state):
+            raise RuntimeError("audit failed")
+
+        with self.assertRaisesRegex(RuntimeError, "audit failed"):
+            sim._run_coupling(
+                lambda instance: instance._coupling_hooks.on_step(instance, None),
+                CouplingMethod.SNIA,
+                hooks=CouplingHooks(on_step=fail),
+            )
+        self.assertFalse(sim._run_active)
+        self.assertFalse(sim._run_completed)
+        self.assertIsNone(sim._coupling_hooks)
+        self.assertIsNone(sim.phreeqc_rm)
+
+    def test_phase_hooks_are_rejected_for_unsupported_algorithms(self):
+        sim = self.simulator()
+        with self.assertRaisesRegex(ConfigurationError, "require SNIA"):
+            sim.run("Strang", hooks=CouplingHooks(on_transport=lambda *_: None))
+        self.assertFalse(sim._run_active)
 
     def test_worker_cleanup_survives_file_close_failure(self):
         sim = self.simulator()

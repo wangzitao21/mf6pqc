@@ -10,17 +10,16 @@ import numpy as np
 from mf6pqc.backends import initialize_modflow6
 from mf6pqc.constants import MIN_TIME_STEP
 from mf6pqc.coupling.common import (
+    advance_to_end,
     build_standard_state,
     cache_basic_geometry,
     commit_reaction_concentrations,
     enforce_component_domains,
     finalize_results,
     get_calculated_density,
-    log_progress,
     read_concentrations_from_modflow,
     run_reaction_step,
     save_time_step_results,
-    simulation_has_time_remaining,
     solve_modflow_solutions,
     synchronize_phreeqcrm_solution,
     update_selected_output,
@@ -111,6 +110,7 @@ def strang_time_step(sim, state: StandardCouplingState) -> None:
         sim.components,
         state.species_slices,
         sim.signed_components,
+        nonnegative_slices=getattr(state, "nonnegative_slices", None),
     )
 
     run_reaction_step(
@@ -146,6 +146,7 @@ def strang_time_step(sim, state: StandardCouplingState) -> None:
         sim.components,
         state.species_slices,
         sim.signed_components,
+        nonnegative_slices=getattr(state, "nonnegative_slices", None),
     )
     synchronize_phreeqcrm_solution(
         sim,
@@ -154,16 +155,11 @@ def strang_time_step(sim, state: StandardCouplingState) -> None:
         preserve_transport_endpoint=True,
     )
 
-    save_time_step_results(sim, state.logical_step, state.current_time)
+    save_time_step_results(
+        sim, state.logical_step, state.current_time, current_k11=state.current_k11
+    )
     state.logical_step += 1
     state.transport_step += 2
-    log_progress(
-        state.current_time,
-        state.end_time,
-        state.logical_step,
-        "Strang",
-        interval=sim.progress_interval,
-    )
 
 
 def run_strang(sim) -> None:
@@ -180,6 +176,5 @@ def run_strang(sim) -> None:
             "save_steps contains a logical Strang step beyond the paired TDIS "
             f"schedule: {max(sim.save_steps)} > {logical_schedule.size}"
         )
-    while simulation_has_time_remaining(state.current_time, state.end_time):
-        strang_time_step(sim, state)
+    advance_to_end(sim, state, strang_time_step, total_steps=logical_schedule.size)
     finalize_results(sim, state.logical_step, start)

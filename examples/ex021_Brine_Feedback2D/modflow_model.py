@@ -13,7 +13,6 @@ from example_utils import boundary_values, component_fields, executable_path
 
 from mf6pqc.utils import get_gwt_model_name
 
-
 CASE_DIR = Path(__file__).resolve().parent
 REPOSITORY_DIR = CASE_DIR.parents[1]
 
@@ -136,6 +135,7 @@ class ChemistryConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
 
 def build_model(
     *,

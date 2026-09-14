@@ -561,6 +561,7 @@ Benz_l # Benzene ligth - Last revised: 12/03/2008
 #--------------------------------------------------------
 # Input parameters
 # Definition of the compound moles 
+    0 PUT(0, 24, CELL_NO)
    20  mBenz_l   = TOT("Benz_l")			# Conc. of lighter compound
    21  mBenz_h   = TOT("Benz_h")			# Conc. of heavier compound
    22  mBenz     = mBenz_l + mBenz_h		# total number of mol for the compound
@@ -580,7 +581,7 @@ Benz_l # Benzene ligth - Last revised: 12/03/2008
 # Molar fraction of lighter isotope 
    70  R = mBenz_l / mBenz		                  
 # Save the biodegradation rate for the rate calculation of the heavier part 
-   82  put(rate_sulf,24)
+   82  put(rate_sulf,24, CELL_NO)
    83  rate = rate_sulf	
 # Update moles based on the calculated rates			
    90  moles = rate * R * time		                  # update lighter isotope moles based on the biodegradation rate
@@ -602,7 +603,7 @@ Benz_h # Benzene heavy
 # Molar fraction of lighter isotope 
  20  R = mBenz_h  / mBenz         
 # Calculate the biodegradation rate for heavier isotopes based on the enrichment factor (transformed here to fractionation factor) 
- 32  rate_sulf     = get(24) * ((epsilon_sulf/1000)+1)   
+ 32  rate_sulf     = get(24, CELL_NO) * ((epsilon_sulf/1000)+1)
  33  rate = rate_sulf
 # Update moles based on the calculated rates
  40  moles   = R * rate * time   # update lighter isotope moles based on the biodegradation rate
@@ -616,6 +617,7 @@ Tolu_l # Toluene ligth - Last revised: 12/03/2008
 #--------------------------------------------------------
 # Input parameters
 # Definition of the compound moles
+    0 PUT(0, 25, CELL_NO)
    20  mTolu_l   = TOT("Tolu_l")			# Conc. of lighter compound
    21  mTolu_h   = TOT("Tolu_h")			# Conc. of heavier compound
    22  mTolu     = mTolu_l + mTolu_h		# total number of mol for the compound
@@ -635,7 +637,7 @@ Tolu_l # Toluene ligth - Last revised: 12/03/2008
 # Molar fraction of lighter isotope
    70  R = mTolu_l / mTolu		
 # Save the biodegradation rate for the rate calculation of the heavier part
-   82  put(rate_sulf,25)
+   82  put(rate_sulf,25, CELL_NO)
    83  rate = rate_sulf	
 # Update moles based on the calculated rates			
    90  moles = rate * R * time		                  # update lighter isotope moles based on the biodegradation rate
@@ -657,7 +659,7 @@ Tolu_h # Toluene heavy
 # Molar fraction of lighter isotope
  20  R = mTolu_h  / mTolu
 # Calculate the biodegradation rate for heavier isotopes based on the enrichment factor (transformed here to fractionation factor)
- 32  rate_sulf     = get(25) * ((epsilon_sulf/1000)+1)
+ 32  rate_sulf     = get(25, CELL_NO) * ((epsilon_sulf/1000)+1)
  33  rate = rate_sulf
 # Update moles based on the calculated rates
  40  moles   = R * rate * time   # update lighter isotope moles based on the biodegradation rate
@@ -672,6 +674,7 @@ Ethyl_l # Ethylene ligth - Last revised: 12/03/2008
 #--------------------------------------------------------
 # Input parameters
 # Definition of the compound moles 
+    0 PUT(0, 26, CELL_NO)
    20  mEthyl_l   = TOT("Ethyl_l")			# Conc. of lighter compound
    21  mEthyl_h   = TOT("Ethyl_h")			# Conc. of heavier compound
    22  mEthyl     = mEthyl_l + mEthyl_h		# total number of mol for the compound
@@ -691,7 +694,7 @@ Ethyl_l # Ethylene ligth - Last revised: 12/03/2008
 # Molar fraction of lighter isotope 
    70  R = mEthyl_l / mEthyl		                  
 # Save the biodegradation rate for the rate calculation of the heavier part 
-   82  put(rate_sulf,26)
+   82  put(rate_sulf,26, CELL_NO)
    83  rate = rate_sulf	
 # Update moles based on the calculated rates			
    90  moles = rate * R * time		                  # update lighter isotope moles based on the biodegradation rate
@@ -713,7 +716,7 @@ Ethyl_h # Ethylene heavy - Last revised: 19/11/2007
 # Molar fraction of lighter isotope 
  20  R = mEthyl_h  / mEthyl         
 # Calculate the biodegradation rate for heavier isotopes based on the enrichment factor (transformed here to fractionation factor) 
- 32  rate_sulf     = get(26) * ((epsilon_sulf/1000)+1)   
+ 32  rate_sulf     = get(26, CELL_NO) * ((epsilon_sulf/1000)+1)
  33  rate = rate_sulf
 # Update moles based on the calculated rates
  40  moles   = R * rate * time   # update lighter isotope moles based on the biodegradation rate
@@ -727,6 +730,7 @@ Xyl_l # Xylene ligth - Last revised: 12/03/2008
 #--------------------------------------------------------
 # Input parameters
 # Definition of the compound moles 
+    0 PUT(0, 27, CELL_NO)
    20  mXyl_l   = TOT("Xyl_l")			# Conc. of lighter compound
    21  mXyl_h   = TOT("Xyl_h")			# Conc. of heavier compound
    22  mXyl     = mXyl_l + mXyl_h		# total number of mol for the compound
@@ -746,7 +750,7 @@ Xyl_l # Xylene ligth - Last revised: 12/03/2008
 # Molar fraction of lighter isotope 
    70  R = mXyl_l / mXyl		                  
 # Save the biodegradation rate for the rate calculation of the heavier part 
-   82  put(rate_sulf,27)
+   82  put(rate_sulf,27, CELL_NO)
    83  rate = rate_sulf	
 # Update moles based on the calculated rates			
    90  moles = rate * R * time		                  # update lighter isotope moles based on the biodegradation rate
@@ -768,7 +772,7 @@ Xyl_h # Xylene heavy - Last revised: 19/11/2007
 # Molar fraction of lighter isotope 
  20  R = mXyl_h  / mXyl         
 # Calculate the biodegradation rate for heavier isotopes based on the enrichment factor (transformed here to fractionation factor) 
- 32  rate_sulf     = get(27) * ((epsilon_sulf/1000)+1)   
+ 32  rate_sulf     = get(27, CELL_NO) * ((epsilon_sulf/1000)+1)
  33  rate = rate_sulf
 # Update moles based on the calculated rates
  40  moles   = R * rate * time   # update lighter isotope moles based on the biodegradation rate
@@ -783,6 +787,7 @@ Oxyl_l # Oxylene ligth - Last revised: 12/03/2008
 #--------------------------------------------------------
 # Input parameters
 # Definition of the compound moles 
+    0 PUT(0, 28, CELL_NO)
    20  mOxyl_l   = TOT("Oxyl_l")			# Conc. of lighter compound
    21  mOxyl_h   = TOT("Oxyl_h")			# Conc. of heavier compound
    22  mOxyl     = mOxyl_l + mOxyl_h		# total number of mol for the compound
@@ -802,7 +807,7 @@ Oxyl_l # Oxylene ligth - Last revised: 12/03/2008
 # Molar fraction of lighter isotope 
    70  R = mOxyl_l / mOxyl		                  
 # Save the biodegradation rate for the rate calculation of the heavier part 
-   82  put(rate_sulf,28)
+   82  put(rate_sulf,28, CELL_NO)
    83  rate = rate_sulf	
 # Update moles based on the calculated rates			
    90  moles = rate * R * time		                  # update lighter isotope moles based on the biodegradation rate
@@ -824,7 +829,7 @@ Oxyl_h # Oxylene heavy - Last revised: 19/11/2007
 # Molar fraction of lighter isotope 
  20  R = mOxyl_h  / mOxyl         
 # Calculate the biodegradation rate for heavier isotopes based on the enrichment factor (transformed here to fractionation factor) 
- 32  rate_sulf     = get(28) * ((epsilon_sulf/1000)+1)   
+ 32  rate_sulf     = get(28, CELL_NO) * ((epsilon_sulf/1000)+1)
  33  rate = rate_sulf
 # Update moles based on the calculated rates
  40  moles   = R * rate * time   # update lighter isotope moles based on the biodegradation rate
@@ -838,6 +843,7 @@ Naph_l # Naphene ligth - Last revised: 12/03/2008
 #--------------------------------------------------------
 # Input parameters
 # Definition of the compound moles 
+    0 PUT(0, 29, CELL_NO)
    20  mNaph_l   = TOT("Naph_l")			# Conc. of lighter compound
    21  mNaph_h   = TOT("Naph_h")			# Conc. of heavier compound
    22  mNaph     = mNaph_l + mNaph_h		# total number of mol for the compound
@@ -857,7 +863,7 @@ Naph_l # Naphene ligth - Last revised: 12/03/2008
 # Molar fraction of lighter isotope 
    70  R = mNaph_l / mNaph		                  
 # Save the biodegradation rate for the rate calculation of the heavier part 
-   82  put(rate_sulf,29)
+   82  put(rate_sulf,29, CELL_NO)
    83  rate = rate_sulf	
 # Update moles based on the calculated rates			
    90  moles = rate * R * time		                  # update lighter isotope moles based on the biodegradation rate
@@ -879,7 +885,7 @@ Naph_h # Naphene heavy - Last revised: 19/11/2007
 # Molar fraction of lighter isotope 
  20  R = mNaph_h  / mNaph         
 # Calculate the biodegradation rate for heavier isotopes based on the enrichment factor (transformed here to fractionation factor) 
- 32  rate_sulf     = get(29) * ((epsilon_sulf/1000)+1)   
+ 32  rate_sulf     = get(29, CELL_NO) * ((epsilon_sulf/1000)+1)
  33  rate = rate_sulf
 # Update moles based on the calculated rates
  40  moles   = R * rate * time   # update lighter isotope moles based on the biodegradation rate
@@ -894,6 +900,7 @@ Ace
 #--------------------------------------------------------
 # Input parameters
 # Definition of the compound moles 
+    0 PUT(0, 30, CELL_NO)
    20  mAce   = TOT("Ace")			# Conc. of lighter compound
    23  IF (mAce < 1e-11) THEN GOTO 200   # If the compound conc. is too low, do not calculate any rates (avoid numerical problems) 
 # Definition of electron acceptors moles
@@ -908,7 +915,7 @@ Ace
    45 monAce    = mAce / (0.0001 + mAce) 
    46 v_up_Ace  = v_up_max_Ace*inhib_bio*monAce*monSulf
    47 rate_sulf = v_up_Ace*mSulfred
-   48  put(rate_sulf,30)        		                  
+   48  put(rate_sulf,30, CELL_NO)
    83  rate = rate_sulf	
 # Update moles based on the calculated rates			
    91  if (moles > mAce) then moles = mAce      # this is to avoid negative mass
@@ -921,6 +928,7 @@ Fluorene
 #--------------------------------------------------------
 # Input parameters
 # Definition of the compound moles 
+    0 PUT(0, 31, CELL_NO)
    20  mFluorene   = TOT("Fluorene")			# Conc. of lighter compound
    23  IF (mFluorene < 1e-11) THEN GOTO 200   # If the compound conc. is too low, do not calculate any rates (avoid numerical problems) 
 # Definition of electron acceptors moles
@@ -935,7 +943,7 @@ Fluorene
    45 monFluorene = mFluorene / (0.0001 + mFluorene) 
    46 v_up_Fluorene = v_up_max_Fluorene*inhib_bio*monFluorene*monSulf
    47 rate_sulf = v_up_Fluorene*mSulfred
-   48 put(rate_sulf,31)     		                  
+   48 put(rate_sulf,31, CELL_NO)
    83 rate = rate_sulf	
 # Update moles based on the calculated rates			
    91  if (moles > mFluorene) then moles = mFluorene      # this is to avoid negative mass
@@ -951,9 +959,9 @@ Sulfred
    30 if (mSulfred - c_init  > 0) then inhibit_fac_decay = (mSulfred - c_init)/mSulfred
    35 if (mSulfred - c_init  = 0) then inhibit_fac_decay = 0
    40 if (mSulfred - c_init  < 0) then inhibit_fac_decay = 0
-   50 growth = get(24)*0.12 + get(25)*0.14 + get(26)*0.16
-   60 growth = growth + get(27)*0.16 + get(28)*0.16 + get(29)*0.20
-   70 growth = growth + get(30)*0.24 + get(31)*0.26
+   50 growth = get(24, CELL_NO)*0.12 + get(25, CELL_NO)*0.14 + get(26, CELL_NO)*0.16
+   60 growth = growth + get(27, CELL_NO)*0.16 + get(28, CELL_NO)*0.16 + get(29, CELL_NO)*0.20
+   70 growth = growth + get(30, CELL_NO)*0.24 + get(31, CELL_NO)*0.26
   190 decay = v_decay*mSulfred * inhibit_fac_decay
   200 moles = (decay - growth) * time
   210 if (moles > mSulfred) then moles = mSulfred
@@ -965,20 +973,21 @@ Sulf_l(6)
 #--------------------------------------------------------
 -start
 # Get rate of toluene_removal 	
-  1  rate_benz   = get(24) * 3.45
-  2  rate_tolu   = get(25) * 4.15
-  3  rate_ethy   = get(26) * 4.85
-  4  rate_xyl    = get(27) * 4.85
-  5  rate_oxyl   = get(28) * 4.85
-  6  rate_naph   = get(29) * 5.50
-  7  rate_ace    = get(30) * 6.65
-  8  rate_fluo   = get(31) * 7.10
+    0 PUT(0, 40, CELL_NO)
+  1  rate_benz   = get(24, CELL_NO) * 3.45
+  2  rate_tolu   = get(25, CELL_NO) * 4.15
+  3  rate_ethy   = get(26, CELL_NO) * 4.85
+  4  rate_xyl    = get(27, CELL_NO) * 4.85
+  5  rate_oxyl   = get(28, CELL_NO) * 4.85
+  6  rate_naph   = get(29, CELL_NO) * 5.50
+  7  rate_ace    = get(30, CELL_NO) * 6.65
+  8  rate_fluo   = get(31, CELL_NO) * 7.10
  20  mS32      = TOT("Sulf_l(6)")
  25  mS34      = TOT("Sulf_h(6)")
  26  if ((mS32+mS34) <= 1e-09) THEN GOTO 200   
  30  R         = mS32 /  (mS32+mS34)
  40  sum_rates = rate_benz + rate_tolu + rate_ethy + rate_xyl + rate_oxyl + rate_naph + rate_ace + rate_fluo 
- 45  put(sum_rates,40)
+ 45  put(sum_rates,40, CELL_NO)
  50  moles = sum_rates * R * time 
  200 SAVE moles
 -end
@@ -989,7 +998,7 @@ Sulf_h(6)
 -start
 # Get rate of toluene_removal
  4   epsilon_s34  = parm(1)	# Isotope enrichment factor sulfate-reducing conditions	
- 10  rate_sulf    = get(40)
+ 10  rate_sulf    = get(40, CELL_NO)
  20  mS32         = TOT("Sulf_l(6)")
  25  mS34         = TOT("Sulf_h(6)")
  26  if ((mS32+mS34) <= 1e-10) THEN GOTO 200  

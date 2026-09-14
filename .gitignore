@@ -26,3 +26,8 @@ htmlcov/
 /examples/*/simulation/*
 /examples/*/output/*
 /examples/*/output/figures/*
+/.diagnostics/
+
+/examples/*/output_original_*/
+
+/examples/*/simulation_original_*/

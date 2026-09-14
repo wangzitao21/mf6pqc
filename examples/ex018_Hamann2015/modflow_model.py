@@ -108,7 +108,7 @@ def build_model(
     flow_ims = flopy.mf6.ModflowIms(
         simulation,
         pname="flow_ims",
-        print_option="SUMMARY",
+        print_option="NONE",
         complexity="MODERATE",
         outer_dvclose=0.0001,
         outer_maximum=100,
@@ -189,7 +189,7 @@ def build_model(
         )
         transport_ims = flopy.mf6.ModflowIms(
             simulation,
-            print_option="SUMMARY",
+            print_option="NONE",
             outer_dvclose=1e-06,
             outer_maximum=100,
             inner_maximum=200,

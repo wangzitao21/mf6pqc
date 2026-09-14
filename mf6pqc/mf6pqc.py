@@ -6,10 +6,9 @@ import numpy as np
 from mf6pqc.backends import (
     BackendFactory,
     NativeBackendFactory,
-    initialize_modflow6,
     initialize_phreeqcrm,
 )
-from mf6pqc.config import SimulationConfig
+from mf6pqc.config import LEGACY_FIELDS, SimulationConfig
 from mf6pqc.constants import SECONDS_PER_DAY, VM_MINERALS
 from mf6pqc.coupling import (
     CouplingMethod,
@@ -19,30 +18,28 @@ from mf6pqc.coupling import (
     run_strang,
     run_thermal_snia,
 )
+from mf6pqc.coupling.state import CouplingHooks
 from mf6pqc.exceptions import ConfigurationError, CouplingError
 from mf6pqc.input_processing import (
-    create_ic_array_from_map,
     setup_mixed_ic,
     setup_single_ic,
 )
 from mf6pqc.output_processing import (
     environment_metadata,
-    extract_output_information,
     save_results,
-    update_diffc,
-    update_porosity,
 )
 from mf6pqc.permeability import (
     BasePermeabilityUpdater,
-    FluidAdjustedKozenyCarmanUpdater,
-    KozenyCarmanUpdater,
 )
 from mf6pqc.permeability import (
     DensityCoupledKozenyCarmanUpdater as DensityCoupledKozenyCarmanUpdater,
 )
 from mf6pqc.permeability import PowerLawUpdater as PowerLawUpdater
+from mf6pqc.properties import extract_output_information, get_calculated_density
+from mf6pqc.results import ResultHistory
+from mf6pqc.runtime import CellState, ChemistryState, RunStatus, TransportState, bind_aliases
 from mf6pqc.types import ArrayLike, SIARateEvaluator
-from mf6pqc.utils import ensure_array, get_species_slice, require_integer, step_numbers
+from mf6pqc.utils import require_integer
 
 _logger = logging.getLogger(__name__)
 
@@ -66,7 +63,7 @@ class mf6pqc:
         density: ArrayLike = 1.0,
         viscosity: ArrayLike = 1.0,
         d0: ArrayLike = 1.0e-9 * SECONDS_PER_DAY,
-        print_chemistry_mask: ArrayLike = 1,
+        print_chemistry_mask: ArrayLike = 0,
         componentH2O: bool = False,
         solution_density_volume: bool = False,
         db_path: str = None,
@@ -110,6 +107,9 @@ class mf6pqc:
         validate_initial_gwe_fields: bool = True,
         initial_gwe_field_tolerance: float = 1.0e-8,
         signed_components: tuple[str, ...] | list[str] = ("Charge",),
+        *,
+        result_storage: str = "memory",
+        fail_on_porosity_clipping: bool = False,
     ):
         """
         Initialize a coupled MODFLOW 6 and PhreeqcRM simulator.
@@ -117,497 +117,29 @@ class mf6pqc:
         ----------
         See class signature for configuration options.
         """
-        self.backend_factory = backend_factory or NativeBackendFactory()
-        self._set_core_config(
-            case_name,
-            nxyz,
-            nthreads,
-            componentH2O,
-            solution_density_volume,
-            db_path,
-            pqi_path,
-            modflow_dll_path,
-            output_dir,
-            workspace,
-            save_interval,
-            save_interval_offset,
-            save_steps,
-            reaction_steps,
-            progress_interval,
-        )
-        self._set_runtime_flags(if_update_porosity_K, if_update_density, if_update_diffc)
-        self._set_component_domains(signed_components)
-        self._set_energy_config(
-            energy_enabled,
-            vsc_enabled,
-            flow_model_name,
-            energy_model_name,
-            npf_package_name,
-            vsc_package_name,
-            est_package_name,
-            sync_gwe_temperature_to_phreeqc,
-            validate_initial_gwe_fields,
-            initial_gwe_field_tolerance,
-        )
-        self.fail_on_nonconvergence = fail_on_nonconvergence
-        self.use_phreeqc_calculated_density = use_phreeqc_calculated_density
-        self.density_output_heading = str(density_output_heading)
-        self.mineral_molar_volumes = dict(VM_MINERALS)
-        if mineral_molar_volumes:
-            self.mineral_molar_volumes.update(mineral_molar_volumes)
-        for mineral, molar_volume in self.mineral_molar_volumes.items():
-            if (
-                not isinstance(mineral, str)
-                or not mineral
-                or not np.isfinite(molar_volume)
-                or molar_volume <= 0.0
-            ):
-                raise ConfigurationError(
-                    "mineral_molar_volumes must map non-empty names to positive "
-                    "finite values in L/mol"
-                )
-        if not np.isfinite(k33_ratio) or k33_ratio <= 0.0:
-            raise ConfigurationError("k33_ratio must be finite and positive")
-        self.k33_ratio = float(k33_ratio)
-        self._set_sia_config(
-            sia_max_iterations,
-            sia_rtol,
-            sia_atol,
-            sia_source_relaxation,
-            sia_density_relaxation,
-            sia_fail_on_nonconvergence,
-            sia_rate_evaluator,
-        )
-        # Optional fixed-head GHB faces whose conductance must track the
-        # adjacent cell K.  Entries are keyed by MODFLOW package name and
-        # contain ``cell_index``, ``distance`` and optional ``area``.
-        self.boundary_conductance_updates = dict(boundary_conductance_updates or {})
-        self._init_state_containers()
-        self._init_fields(
-            temperature,
-            pressure,
-            porosity,
-            saturation,
-            density,
-            viscosity,
-            d0,
-            porosity_update_mask,
-            print_chemistry_mask,
-            water_only_sink_rates,
-        )
-        if permeability_updater is not None and not isinstance(
-            permeability_updater, BasePermeabilityUpdater
-        ):
-            raise TypeError("permeability_updater must implement BasePermeabilityUpdater")
-        if permeability_updater is not None:
-            self.perm_updater = permeability_updater
-        else:
-            self.perm_updater = KozenyCarmanUpdater()
-        self._validate_feature_combinations()
-        self._initialize_phreeqcrm()
-        self.k_update_density_prev = self.density.copy()
-        self.k_update_viscosity_prev = self.viscosity.copy()
-
-    def _set_component_domains(self, signed_components: tuple[str, ...] | list[str]) -> None:
-        """Store components whose valid concentration domain includes negatives."""
-        if isinstance(signed_components, (str, bytes)):
-            raise TypeError("signed_components must be a sequence of component names")
-        try:
-            names = tuple(signed_components)
-        except TypeError as exc:
-            raise TypeError("signed_components must be a sequence of component names") from exc
-        if any(not isinstance(name, str) or not name.strip() for name in names):
-            raise ValueError("signed_components must contain only non-empty component names")
-        self.signed_components = frozenset(name.strip().casefold() for name in names)
+        parameters = {name: value for name, value in locals().items() if name != "self"}
+        self._initialize(SimulationConfig.from_legacy(parameters))
 
     @classmethod
     def from_config(cls, config: SimulationConfig):
         """Construct a simulator from grouped, scientist-facing settings."""
         if not isinstance(config, SimulationConfig):
             raise TypeError("config must be a SimulationConfig instance")
-        return cls(**config.to_legacy_kwargs())
+        instance = cls.__new__(cls)
+        instance._initialize(config)
+        return instance
 
-    def _set_sia_config(
-        self,
-        max_iterations: int,
-        rtol: float,
-        atol: float,
-        source_relaxation: float,
-        density_relaxation: float,
-        fail_on_nonconvergence: bool,
-        rate_evaluator: SIARateEvaluator | None,
-    ) -> None:
-        """Validate and store controls for the sequential iterative method."""
-        max_iterations = require_integer("sia_max_iterations", max_iterations)
-        if not np.isfinite(rtol) or not np.isfinite(atol) or rtol < 0.0 or atol < 0.0:
-            raise ConfigurationError("SIA convergence tolerances must be finite and nonnegative")
-        if rtol == 0.0 and atol == 0.0:
-            raise ConfigurationError("At least one SIA convergence tolerance must be positive")
-        if not 0.0 < source_relaxation <= 1.0:
-            raise ValueError("sia_source_relaxation must be in (0, 1]")
-        if not 0.0 < density_relaxation <= 1.0:
-            raise ValueError("sia_density_relaxation must be in (0, 1]")
-        if rate_evaluator is not None and not callable(rate_evaluator):
-            raise TypeError("sia_rate_evaluator must be callable or None")
-        self.sia_max_iterations = int(max_iterations)
-        self.sia_rtol = float(rtol)
-        self.sia_atol = float(atol)
-        self.sia_source_relaxation = float(source_relaxation)
-        self.sia_density_relaxation = float(density_relaxation)
-        self.sia_fail_on_nonconvergence = bool(fail_on_nonconvergence)
-        self.sia_rate_evaluator = rate_evaluator
-
-    def _set_core_config(
-        self,
-        case_name: str,
-        nxyz: int,
-        nthreads: int,
-        componentH2O: bool,
-        solution_density_volume: bool,
-        db_path: str,
-        pqi_path: str,
-        modflow_dll_path: str,
-        output_dir: str,
-        workspace: str,
-        save_interval: int,
-        save_interval_offset: int,
-        save_steps: list[int] | None,
-        reaction_steps: list[int] | None,
-        progress_interval: int,
-    ) -> None:
-        """
-        Set core configuration attributes.
-        Parameters
-        ----------
-        See class signature for configuration options.
-        Returns
-        -------
-        None
-            Updates basic configuration fields.
-        """
-        if not isinstance(case_name, str) or not case_name.strip():
-            raise ConfigurationError("case_name must be a non-empty string")
-        if any(character in case_name for character in "/\\:\0") or case_name.strip() in {
-            ".",
-            "..",
-        }:
-            raise ConfigurationError("case_name must be a filename label, without path separators")
-        nxyz = require_integer("nxyz", nxyz)
-        nthreads = require_integer("nthreads", nthreads)
-        save_interval = require_integer("save_interval", save_interval)
-        save_interval_offset = require_integer(
-            "save_interval_offset", save_interval_offset, minimum=0
-        )
-        self.case_name = case_name.strip()
-        self.nxyz = int(nxyz)
-        self.nthreads = int(nthreads)
-        self.componentH2O = bool(componentH2O)
-        self.solution_density_volume = bool(solution_density_volume)
-        self.db_path = db_path
-        self.pqi_path = pqi_path
-        self.modflow_dll_path = modflow_dll_path
-        self.output_dir = output_dir
-        self.workspace = workspace
-        self.save_interval = int(save_interval)
-        self.save_interval_offset = int(save_interval_offset)
-        self.save_steps = step_numbers("save_steps", save_steps)
-        self.reaction_steps = step_numbers("reaction_steps", reaction_steps)
-        self.progress_interval = require_integer("progress_interval", progress_interval)
-
-    def _set_runtime_flags(
-        self, if_update_porosity_K: bool, if_update_density: bool, if_update_diffc: bool
-    ) -> None:
-        """
-        Set feature flags controlling feedback updates.
-        Parameters
-        ----------
-        if_update_porosity_K : bool
-            Whether to update porosity and permeability.
-        if_update_density : bool
-            Whether to update density feedback.
-        if_update_diffc : bool
-            Whether to update diffusion coefficients.
-        Returns
-        -------
-        None
-            Stores runtime flags on the instance.
-        """
-        self.if_update_porosity_K = if_update_porosity_K
-        self.if_update_density = if_update_density
-        self.if_update_diffc = if_update_diffc
-
-    def _set_energy_config(
-        self,
-        energy_enabled: bool,
-        vsc_enabled: bool,
-        flow_model_name: str,
-        energy_model_name: str,
-        npf_package_name: str,
-        vsc_package_name: str,
-        est_package_name: str,
-        sync_temperature: bool,
-        validate_initial_fields: bool,
-        initial_field_tolerance: float,
-    ) -> None:
-        """Validate and store opt-in GWE/VSC coupling controls."""
-        self.energy_enabled = bool(energy_enabled)
-        self.vsc_enabled = bool(vsc_enabled)
-        if self.vsc_enabled and not self.energy_enabled:
-            raise ConfigurationError("vsc_enabled=True requires energy_enabled=True")
-        names = {
-            "flow_model_name": flow_model_name,
-            "energy_model_name": energy_model_name,
-            "npf_package_name": npf_package_name,
-            "vsc_package_name": vsc_package_name,
-            "est_package_name": est_package_name,
-        }
-        for label, value in names.items():
-            if not isinstance(value, str) or not value.strip():
-                raise ConfigurationError(f"{label} must be a non-empty string")
-            setattr(self, label, value.strip())
-        if not np.isfinite(initial_field_tolerance) or initial_field_tolerance < 0.0:
-            raise ConfigurationError("initial_gwe_field_tolerance must be finite and nonnegative")
-        self.sync_gwe_temperature_to_phreeqc = bool(sync_temperature)
-        self.validate_initial_gwe_fields = bool(validate_initial_fields)
-        self.initial_gwe_field_tolerance = float(initial_field_tolerance)
-
-    def _validate_feature_combinations(self) -> None:
-        """Reject ownership conflicts before either native solver is run."""
-        if self.boundary_conductance_updates and not self.if_update_porosity_K:
-            raise ConfigurationError(
-                "boundary_conductance_updates requires if_update_porosity_K=True"
-            )
-        if self.sia_rate_evaluator is not None and (
-            self.if_update_porosity_K or self.if_update_density or self.if_update_diffc
-        ):
-            raise ConfigurationError(
-                "sia_rate_evaluator is a stateless aqueous-rate interface and "
-                "cannot update PHREEQC-owned density, porosity, conductivity, "
-                "or diffusion feedback"
-            )
-        if self.vsc_enabled and self.boundary_conductance_updates:
-            raise ConfigurationError(
-                "boundary_conductance_updates cannot be combined with VSC. "
-                "MODFLOW VSC must remain the sole owner of viscosity-adjusted "
-                "boundary and aquifer conductance."
-            )
-        if self.vsc_enabled and isinstance(self.perm_updater, FluidAdjustedKozenyCarmanUpdater):
-            raise ConfigurationError(
-                "FluidAdjustedKozenyCarmanUpdater cannot be combined with VSC; "
-                "that would apply viscosity to hydraulic conductivity twice"
-            )
-
-    def _init_state_containers(self) -> None:
-        """
-        Initialize runtime containers and backend placeholders.
-        Parameters
-        ----------
-        None
-            Uses instance configuration attributes.
-        Returns
-        -------
-        None
-            Creates empty containers for results and backend state.
-        """
-        self.phreeqc_rm = None
-        self.modflow_api = None
-        self.ncomps = None
-        self.components = []
-        self.headings = []
-        self.is_setup = False
-        self.results = []
-        self.results_K = []
-        self.results_porosity = []
-        self.results_diffc = []
-        self.results_temperature = []
-        self.results_temperature_for_flow = []
-        self.results_viscosity = []
-        self.results_reference_K = []
-        self.results_effective_K = []
-        self.result_times = []
-        self.modflow_convergence_failures = []
-        self.sia_iterations = []
-        self.sia_convergence_failures = []
-        self.sia_diagnostics = []
-        self.initial_concentrations = None
-        self.selected_output = None
-        self.energy_binding = None
-        self.final_time_step_index = 0
-        self.last_run_wall_time_seconds = None
-        self.last_coupling_method = None
-        self._run_active = False
-        self._run_completed = False
-        self._chemistry_finalized = False
-        self._modflow_finalized = False
-
-    def _init_fields(
-        self,
-        temperature: ArrayLike,
-        pressure: ArrayLike,
-        porosity: ArrayLike,
-        saturation: ArrayLike,
-        density: ArrayLike,
-        viscosity: ArrayLike,
-        d0: ArrayLike,
-        porosity_update_mask: ArrayLike,
-        print_chemistry_mask: ArrayLike,
-        water_only_sink_rates: ArrayLike | None,
-    ) -> None:
-        """
-        Initialize primary physical fields.
-        Parameters
-        ----------
-        temperature, pressure, porosity, saturation, density, d0, print_chemistry_mask : ArrayLike
-            Cell-wise fields for physical and chemical properties.
-        Returns
-        -------
-        None
-            Stores normalized arrays on the instance.
-        """
-        self.temperature = self._ensure_array("temperature", temperature)
-        self.pressure = self._ensure_array("pressure", pressure)
-        self.porosity = self._ensure_array("porosity", porosity)
-        self.saturation = self._ensure_array("saturation", saturation)
-        self.density = self._ensure_array("density", density)
-        self.viscosity = self._ensure_array("viscosity", viscosity)
-        mask = self._ensure_array("porosity_update_mask", porosity_update_mask)
-        if not np.all(np.isin(mask, [0, 1])):
-            raise ConfigurationError("porosity_update_mask must contain only 0 or 1")
-        self.porosity_update_mask = mask.astype(bool)
-        self.print_chemistry_mask = self._ensure_array("print_chemistry_mask", print_chemistry_mask)
-        if not np.all(np.isin(self.print_chemistry_mask, [0, 1])):
-            raise ConfigurationError("print_chemistry_mask must contain only 0 or 1")
-        if water_only_sink_rates is None:
-            self.water_only_sink_rates = np.zeros(self.nxyz, dtype=float)
-        else:
-            self.water_only_sink_rates = self._ensure_array(
-                "water_only_sink_rates", water_only_sink_rates
-            )
-            if np.any(self.water_only_sink_rates < 0.0):
-                raise ValueError("water_only_sink_rates must be nonnegative")
-        self.d0 = self._ensure_array("d0", d0)
-        self.has_water_only_sinks = bool(np.any(self.water_only_sink_rates > 0.0))
-        self._validate_physical_fields()
-
-    def _validate_physical_fields(self) -> None:
-        """Reject non-finite or physically impossible cell fields early."""
-        fields = {
-            "temperature": self.temperature,
-            "pressure": self.pressure,
-            "porosity": self.porosity,
-            "saturation": self.saturation,
-            "density": self.density,
-            "viscosity": self.viscosity,
-            "d0": self.d0,
-            "water_only_sink_rates": self.water_only_sink_rates,
-        }
-        for name, values in fields.items():
-            if not np.all(np.isfinite(values)):
-                raise ConfigurationError(f"{name} contains non-finite values")
-        if np.any(self.temperature <= -273.15):
-            raise ConfigurationError("temperature must be above absolute zero")
-        if np.any(self.pressure <= 0.0):
-            raise ConfigurationError("pressure must be positive")
-        if np.any(self.porosity <= 0.0) or np.any(self.porosity > 1.0):
-            raise ConfigurationError("porosity must be in (0, 1]")
-        if np.any(self.saturation < 0.0) or np.any(self.saturation > 1.0):
-            raise ConfigurationError("saturation must be in [0, 1]")
-        if np.any(self.density <= 0.0):
-            raise ConfigurationError("density must be positive")
-        if np.any(self.viscosity <= 0.0):
-            raise ConfigurationError("viscosity must be positive")
-        if np.any(self.d0 < 0.0):
-            raise ConfigurationError("d0 must be nonnegative")
-
-    def _ensure_array(self, name: str, value: ArrayLike) -> np.ndarray:
-        """
-        Normalize user input into a cell-wise array.
-        Parameters
-        ----------
-        name : str
-            Parameter name for error messages.
-        value : ArrayLike
-            Scalar or array input representing a field.
-        Returns
-        -------
-        np.ndarray
-            Flattened array with length nxyz.
-        """
-        return ensure_array(self.nxyz, name, value)
-
-    def _initialize_phreeqcrm(self) -> None:
-        """
-        Initialize the PhreeqcRM backend.
-        Parameters
-        ----------
-        None
-            Uses instance configuration attributes.
-        Returns
-        -------
-        None
-            Creates and configures the PhreeqcRM object.
-        """
+    def _initialize(self, config):
+        self.config = config.validated()
+        self.cells = CellState.from_config(self.config)
+        self.chemistry = ChemistryState()
+        self.transport = TransportState()
+        self.lifecycle = RunStatus()
+        self.history = ResultHistory()
+        self.backend_factory = self.backend_factory or NativeBackendFactory()
         initialize_phreeqcrm(self)
-
-    def _initialize_modflow6(self) -> None:
-        """
-        Initialize the MODFLOW 6 backend.
-        Parameters
-        ----------
-        None
-            Uses instance configuration attributes.
-        Returns
-        -------
-        None
-            Creates and configures the ModflowApi object.
-        """
-        initialize_modflow6(self)
-
-    def _create_ic_array_from_map(self, ic_map: dict) -> np.ndarray:
-        """
-        Build the initial condition array for PhreeqcRM.
-        Parameters
-        ----------
-        ic_map : dict
-            Mapping of module name to initial condition values.
-        Returns
-        -------
-        np.ndarray
-            Packed initial condition array.
-        """
-        return create_ic_array_from_map(self.nxyz, ic_map)
-
-    def _setup_single_ic(self, ic_map: dict) -> None:
-        """
-        Apply a single set of initial chemical conditions.
-        Parameters
-        ----------
-        ic_map : dict
-            Mapping of module name to initial condition values.
-        Returns
-        -------
-        None
-            Applies initial conditions to PhreeqcRM.
-        """
-        setup_single_ic(self.phreeqc_rm, self.nxyz, ic_map)
-
-    def _setup_mixed_ic(self, ic_map1: dict, ic_map2: dict, fractions: ArrayLike) -> None:
-        """
-        Apply mixed initial chemical conditions.
-        Parameters
-        ----------
-        ic_map1 : dict
-            Mapping of module name to initial condition values.
-        ic_map2 : dict
-            Mapping of module name to initial condition values.
-        fractions : ArrayLike
-            Mixing fraction per cell for ic_map1.
-        Returns
-        -------
-        None
-            Applies mixed initial conditions to PhreeqcRM.
-        """
-        setup_mixed_ic(self.phreeqc_rm, self.nxyz, ic_map1, ic_map2, fractions)
+        self.k_update_density_prev = self.density.copy()
+        self.k_update_viscosity_prev = self.viscosity.copy()
 
     def setup(
         self,
@@ -640,9 +172,9 @@ class mf6pqc:
             return self.initial_concentrations.copy()
         try:
             if ic_map2 is not None and fractions is not None:
-                self._setup_mixed_ic(ic_map, ic_map2, fractions)
+                setup_mixed_ic(self.phreeqc_rm, self.nxyz, ic_map, ic_map2, fractions)
             elif ic_map2 is None and fractions is None:
-                self._setup_single_ic(ic_map)
+                setup_single_ic(self.phreeqc_rm, self.nxyz, ic_map)
             else:
                 raise ConfigurationError(
                     "ic_map2 and fractions must be provided together for mixed mode"
@@ -673,20 +205,22 @@ class mf6pqc:
             if not np.all(np.isfinite(self.selected_output)):
                 raise CouplingError("Initial selected output contains non-finite values")
             if self.if_update_density:
-                from mf6pqc.coupling.common import get_calculated_density
-
-                if (
-                    not self.use_phreeqc_calculated_density
-                    and self.headings[-1].casefold() != self.density_output_heading.casefold()
-                ):
-                    raise ConfigurationError(
-                        "Density feedback reads the final selected-output row. "
-                        f"Expected heading {self.density_output_heading!r}, got {self.headings[-1]!r}. "
-                        "Set use_phreeqc_calculated_density=True or provide the correct density_output_heading."
-                    )
+                if not self.use_phreeqc_calculated_density:
+                    matches = [
+                        index
+                        for index, heading in enumerate(self.headings)
+                        if heading.casefold() == self.density_output_heading.casefold()
+                    ]
+                    if len(matches) != 1:
+                        raise ConfigurationError(
+                            f"Density feedback requires exactly one {self.density_output_heading!r} selected-output heading"
+                        )
+                    self.chemistry.density_row = matches[0]
                 get_calculated_density(self)
             if self.if_update_porosity_K:
-                self._get_output_information()
+                self.output_indices, self.mineral_volumes, self.d_mineral_names = (
+                    extract_output_information(self.headings, self.mineral_molar_volumes)
+                )
                 if self.output_indices.size == 0:
                     raise ConfigurationError(
                         "Porosity feedback is enabled, but selected output contains no "
@@ -701,105 +235,9 @@ class mf6pqc:
             self.finalize()
             raise
 
-    def _get_output_information(self) -> None:
-        """
-        Extract mineral output indices and molar volumes.
-        Parameters
-        ----------
-        None
-            Uses instance headings and VM_minerals table.
-        Returns
-        -------
-        None
-            Stores indices and molar volumes on the instance.
-        """
-        output_indices, mineral_volumes, mineral_names = extract_output_information(
-            self.headings, self.mineral_molar_volumes
-        )
-        self.output_indices = output_indices
-        self.mineral_volumes = mineral_volumes
-        self.d_mineral_names = mineral_names
-
-    def _update_porosity(self) -> np.ndarray:
-        """
-        Update porosity using selected output mineral changes.
-        Parameters
-        ----------
-        None
-            Uses instance selected output and porosity fields.
-        Returns
-        -------
-        np.ndarray
-            Updated porosity field.
-        """
-        return update_porosity(
-            self.selected_output, self.output_indices, self.mineral_volumes, self.porosity
-        )
-
-    def _update_K(
-        self,
-        K_old: np.ndarray,
-        old_porosity: np.ndarray,
-        new_porosity: np.ndarray,
-        density_old: np.ndarray | None = None,
-        density_new: np.ndarray | None = None,
-        viscosity_old: np.ndarray | None = None,
-        viscosity_new: np.ndarray | None = None,
-    ) -> np.ndarray:
-        """
-        Update permeability using the configured updater.
-        Parameters
-        ----------
-        K_old : np.ndarray
-            Previous permeability field.
-        old_porosity : np.ndarray
-            Previous porosity field.
-        new_porosity : np.ndarray
-            Updated porosity field.
-        Returns
-        -------
-        np.ndarray
-            Updated permeability field.
-        """
-        return self.perm_updater.update(
-            K_old,
-            old_porosity,
-            new_porosity,
-            density_old=density_old,
-            density_new=density_new,
-            viscosity_old=viscosity_old,
-            viscosity_new=viscosity_new,
-        )
-
-    def _update_diffc(self, new_porosity: np.ndarray) -> np.ndarray:
-        """
-        Update diffusion coefficient from porosity.
-        Parameters
-        ----------
-        new_porosity : np.ndarray
-            Updated porosity field.
-        Returns
-        -------
-        np.ndarray
-            Updated diffusion coefficient field.
-        """
-        return update_diffc(new_porosity, self.d0)
-
-    def _get_species_slice(self, ispecies: int) -> slice:
-        """
-        Get slice for the specified component in a 1D vector.
-        Parameters
-        ----------
-        ispecies : int
-            Component index.
-        Returns
-        -------
-        slice
-            Slice representing the component block.
-        """
-        return get_species_slice(self.nxyz, ispecies)
-
-    def run(self, method: CouplingMethod | str | None = None) -> None:
+    def run(
+        self, method: CouplingMethod | str | None = None, *, hooks: CouplingHooks | None = None
+    ) -> None:
         """
         Advance a configured SNIA, SIA, Strang, or ThermalSNIA simulation.
         Parameters
@@ -812,16 +250,16 @@ class mf6pqc:
             Advances the simulation and stores results.
         """
         if method is None:
-            self._run_coupling(run_standard, CouplingMethod.SNIA)
+            self._run_coupling(run_standard, CouplingMethod.SNIA, hooks=hooks)
             return
         normalized, runner = get_coupling_runner(method)
-        self._run_coupling(runner, normalized)
+        self._run_coupling(runner, normalized, hooks=hooks)
 
-    def run_SNIA(self) -> None:
+    def run_SNIA(self, *, hooks: CouplingHooks | None = None) -> None:
         """Run the sequential non-iterative coupling loop explicitly."""
-        self._run_coupling(run_standard, CouplingMethod.SNIA)
+        self._run_coupling(run_standard, CouplingMethod.SNIA, hooks=hooks)
 
-    def run_SIA(self) -> None:
+    def run_SIA(self, *, hooks: CouplingHooks | None = None) -> None:
         """
         Run the SIA coupling loop with source feedback.
         Parameters
@@ -833,17 +271,23 @@ class mf6pqc:
         None
             Advances the simulation and stores results.
         """
-        self._run_coupling(run_sia, CouplingMethod.SIA)
+        self._run_coupling(run_sia, CouplingMethod.SIA, hooks=hooks)
 
-    def run_Strang(self) -> None:
+    def run_Strang(self, *, hooks: CouplingHooks | None = None) -> None:
         """Run symmetric transport-reaction-transport Strang splitting."""
-        self._run_coupling(run_strang, CouplingMethod.STRANG)
+        self._run_coupling(run_strang, CouplingMethod.STRANG, hooks=hooks)
 
-    def run_ThermalSNIA(self) -> None:
+    def run_ThermalSNIA(self, *, hooks: CouplingHooks | None = None) -> None:
         """Run explicit GWF-GWT-GWE-VSC reactive transport."""
-        self._run_coupling(run_thermal_snia, CouplingMethod.THERMAL_SNIA)
+        self._run_coupling(run_thermal_snia, CouplingMethod.THERMAL_SNIA, hooks=hooks)
 
-    def _run_coupling(self, runner, method: CouplingMethod | str | None = None) -> None:
+    def _run_coupling(
+        self,
+        runner,
+        method: CouplingMethod | str | None = None,
+        *,
+        hooks: CouplingHooks | None = None,
+    ) -> None:
         """Apply lifecycle guards around a coupling algorithm."""
         self._ensure_open()
         if self._run_active:
@@ -866,6 +310,14 @@ class mf6pqc:
             )
         if is_thermal and not self.energy_enabled:
             raise ConfigurationError("ThermalSNIA requires energy_enabled=True")
+        if hooks is not None:
+            if not isinstance(hooks, CouplingHooks):
+                raise ConfigurationError("hooks must be a CouplingHooks instance")
+            if method is not CouplingMethod.SNIA and (
+                hooks.on_transport is not None or hooks.on_reaction is not None
+            ):
+                raise ConfigurationError("Transport and reaction hooks require SNIA")
+        self._coupling_hooks = hooks
         self._run_active = True
         if isinstance(method, CouplingMethod):
             self.last_coupling_method = method.value
@@ -882,6 +334,7 @@ class mf6pqc:
             self._run_completed = True
         finally:
             self._run_active = False
+            self._coupling_hooks = None
 
     def save_results(self, filename: str = None) -> None:
         """
@@ -913,6 +366,10 @@ class mf6pqc:
                 "completed": self._run_completed,
                 "nxyz": self.nxyz,
                 "nthreads": self.nthreads,
+                "chemistry_backend": type(self.backend_factory).__name__,
+                "chemistry_processes": min(
+                    self.nxyz, getattr(self.backend_factory, "processes", 1)
+                ),
                 "components": self.components,
                 "environment": environment_metadata(),
                 "inputs": self.input_provenance,
@@ -923,6 +380,10 @@ class mf6pqc:
                 "sia_iterations": self.sia_iterations,
                 "sia_convergence_failures": self.sia_convergence_failures,
                 "sia_diagnostics": self.sia_diagnostics,
+                "porosity_clipping": self.porosity_clipping,
+                "converged": self._run_completed
+                and not (self.modflow_convergence_failures or self.sia_convergence_failures),
+                "result_storage": self.result_storage,
             },
             energy_results=energy_result_payload(self),
         )
@@ -1026,3 +487,32 @@ class mf6pqc:
 # implementation so existing imports, notebooks, and serialized metadata keep
 # working unchanged.
 MF6PQC = mf6pqc
+
+bind_aliases(
+    mf6pqc,
+    {
+        **{name: f"config.{path}" for name, path in LEGACY_FIELDS.items()},
+        **{name: f"cells.{name}" for name in CellState.__dataclass_fields__},
+        **{
+            name: f"chemistry.{name}"
+            for name in ChemistryState.__dataclass_fields__
+            if name != "backend"
+        },
+        **{
+            name: f"transport.{name}"
+            for name in TransportState.__dataclass_fields__
+            if name not in {"backend", "simulation"}
+        },
+        **{name: f"lifecycle.{name}" for name in RunStatus.__dataclass_fields__},
+        **{name: f"history.{name}" for name in ResultHistory.__dataclass_fields__},
+        "phreeqc_rm": "chemistry.backend",
+        "modflow_api": "transport.backend",
+        "sim": "transport.simulation",
+        "perm_updater": "config.feedback.permeability_updater",
+        "_run_active": "lifecycle.active",
+        "_run_completed": "lifecycle.completed",
+        "_chemistry_finalized": "lifecycle.chemistry_finalized",
+        "_modflow_finalized": "lifecycle.modflow_finalized",
+        "_coupling_hooks": "lifecycle.hooks",
+    },
+)

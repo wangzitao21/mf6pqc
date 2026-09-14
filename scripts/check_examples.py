@@ -1,6 +1,6 @@
 """Check example layouts and safe imports, or explicitly run selected cases.
 
-Long-running benchmarks are excluded from this native regression command.
+Native runs require an explicit selection, including long-running benchmarks.
 """
 
 from __future__ import annotations
@@ -27,26 +27,25 @@ NATIVE_CASES = {
     name: [("run.py", [])]
     for name in [
         *PHT3D_SMOKE_CASES,
+        "ex011_PHT3D_11",
+        "ex012_PHT3D_12",
+        "ex013_PHT3D_13",
+        "ex014_Xie2015_B1",
+        "ex015_Xie2015_B2",
+        "ex016_Xie2015_B3",
+        "ex017_Xie2015_B4",
+        "ex018_Hamann2015",
+        "ex021_Brine_Feedback2D",
         "ex999_Thermal_ReactiveColumn1D",
         "ex019_Splitting_KineticDecay1D",
         "ex020_Splitting_RedoxFront2D",
     ]
 }
 REQUIRED_FILES = {"modflow_model.py", "run.py", "plot.ipynb"}
-OPTIONAL_FILES = {
-    "README.md",
-    "config.py",
-    "comparison.py",
-    "chemistry.py",
-    "simulation.py",
-    "analysis.py",
-}
 RUNTIME_DIRECTORIES = {"output", "simulation"}
 CACHE_DIRECTORIES = {"__pycache__", ".ipynb_checkpoints"}
 SHARED_FILES = {"example_utils.py", "README.md"}
-ALLOWED_ENTRIES = (
-    REQUIRED_FILES | OPTIONAL_FILES | RUNTIME_DIRECTORIES | CACHE_DIRECTORIES | {"input_data"}
-)
+ALLOWED_ENTRIES = REQUIRED_FILES | RUNTIME_DIRECTORIES | {"input_data"}
 
 
 def discover_cases(examples: Path) -> list[Path]:
@@ -70,9 +69,6 @@ def discover_cases(examples: Path) -> list[Path]:
         for name in RUNTIME_DIRECTORIES | CACHE_DIRECTORIES:
             if (entry / name).exists() and not (entry / name).is_dir():
                 raise AssertionError(f"{entry.name}: {name} must be a directory")
-        for name in OPTIONAL_FILES:
-            if (entry / name).exists() and not (entry / name).is_file():
-                raise AssertionError(f"{entry.name}: {name} must be a file")
         cases.append(entry)
     if not cases:
         raise AssertionError("No example cases found")
@@ -86,6 +82,7 @@ def _import_without_solvers(scripts: list[Path]) -> None:
     import flopy
 
     from mf6pqc.backends import NativeBackendFactory
+    from mf6pqc.parallel import ProcessBackendFactory
 
     # NumPy/SciPy query platform information during import. On Windows,
     # a cold uname cache can launch the harmless system command "ver".
@@ -110,6 +107,7 @@ def _import_without_solvers(scripts: list[Path]) -> None:
     with ExitStack() as stack:
         for owner, attribute in (
             (NativeBackendFactory, "create_phreeqcrm"),
+            (ProcessBackendFactory, "create_phreeqcrm"),
             (NativeBackendFactory, "create_modflow_api"),
             (NativeBackendFactory, "load_modflow_simulation"),
             (flopy.mf6.MFSimulation, "__init__"),
@@ -205,6 +203,47 @@ def check_static(*, allow_notebook_outputs: bool = False) -> list[dict]:
     return reports
 
 
+def validate_native_results(case_directory: Path) -> dict:
+    import numpy as np
+
+    manifests = sorted((case_directory / "output").rglob("results_manifest.json"))
+    if not manifests:
+        raise AssertionError(f"No completed result manifests in {case_directory}")
+    checked_arrays = 0
+    for path in manifests:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        run = manifest.get("run", {})
+        if run.get("completed") is not True:
+            raise AssertionError(f"Simulation did not complete: {path}")
+        for field in ("modflow_convergence_failures", "sia_convergence_failures"):
+            if run.get(field):
+                raise AssertionError(f"{field} reported in {path}")
+        for name in manifest["files"]:
+            if not (path.parent / name).is_file():
+                raise AssertionError(f"Missing output {name}: {path}")
+        selected = np.load(path.parent / "results.npy", allow_pickle=False)
+        times = np.load(path.parent / "results_times.npy", allow_pickle=False)
+        headings = (path.parent / "results_headings.txt").read_text(encoding="utf-8").splitlines()
+        if list(selected.shape) != manifest["result_shape"] or selected.ndim != 3:
+            raise AssertionError(f"Selected-output shape does not match its manifest: {path}")
+        if selected.shape[1] != len(headings) or selected.shape[2] != run["nxyz"]:
+            raise AssertionError(f"Selected-output headings or cell count do not match: {path}")
+        if times.shape != (selected.shape[0],) or np.any(np.diff(times) <= 0):
+            raise AssertionError(f"Invalid result time axis: {path}")
+        for output in path.parent.glob("*.npy"):
+            values = np.load(output, allow_pickle=False)
+            if not np.all(np.isfinite(values)):
+                raise AssertionError(f"Non-finite output values: {output}")
+            if output.name == "results_porosity.npy" and (
+                np.any(values <= 0) or np.any(values > 1)
+            ):
+                raise AssertionError(f"Invalid porosity: {output}")
+            if output.name == "results_K.npy" and np.any(values <= 0):
+                raise AssertionError(f"Non-positive hydraulic conductivity: {output}")
+            checked_arrays += 1
+    return {"result_sets": len(manifests), "arrays_checked": checked_arrays}
+
+
 def check_native(names: list[str], output_root: Path, timeout: float) -> list[dict]:
     """Run only explicitly named catalogue cases in an isolated result directory."""
     if not names or set(names) - NATIVE_CASES.keys():
@@ -239,6 +278,13 @@ def check_native(names: list[str], output_root: Path, timeout: float) -> list[di
                 "seconds": time.perf_counter() - start,
                 "log": str(log),
             }
+            validation_error = None
+            if not completed.returncode:
+                try:
+                    report["validation"] = validate_native_results(output_root / name)
+                except (AssertionError, OSError, ValueError, KeyError) as exc:
+                    validation_error = str(exc)
+                    report["validation_error"] = validation_error
             reports.append(report)
             (output_root / "native-report.json").write_text(
                 json.dumps(reports, indent=2) + "\n", encoding="utf-8"
@@ -249,6 +295,8 @@ def check_native(names: list[str], output_root: Path, timeout: float) -> list[di
             )
             if completed.returncode:
                 raise RuntimeError(f"Native check failed. See {log}")
+            if validation_error:
+                raise RuntimeError(f"Native result validation failed: {validation_error}")
     return reports
 
 

@@ -13,7 +13,13 @@ if str(EXAMPLES_DIR) not in sys.path:
 
 import numpy as np
 from ex017_Xie2015_B4.modflow_model import build_model
-from example_utils import configure_logging, library_path, require_output_files, runtime_path
+from example_utils import (
+    configure_logging,
+    library_path,
+    process_backend,
+    require_output_files,
+    runtime_path,
+)
 
 from mf6pqc import (
     MF6PQC,
@@ -62,7 +68,8 @@ def main() -> None:
     simulation_config = SimulationConfig(
         case_name="ex017",
         nxyz=NXYZ,
-        nthreads=12,
+        nthreads=1,
+        backend_factory=process_backend(8),
         paths=BackendPaths(
             database=INPUT_DIR / "database.dat",
             chemistry_input=INPUT_DIR / "input.pqi",

@@ -8,14 +8,18 @@ implement constitutive relationships themselves.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
 
-from mf6pqc.constants import K33_RATIO
+from mf6pqc.backends import CheckedPhreeqcRM
+from mf6pqc.constants import K33_RATIO, MAX_POROSITY, MIN_POROSITY
 from mf6pqc.exceptions import BackendError, ConfigurationError, PropertyUpdateError
-from mf6pqc.output_processing import update_diffc, update_porosity
-from mf6pqc.utils import get_gwt_model_name
+from mf6pqc.properties import calculate_porosity, get_calculated_density, update_diffc
+from mf6pqc.utils import get_gwt_model_name, require_integer
+
+_logger = logging.getLogger(__name__)
 
 
 def cache_porosity_pointers(modflow_api, components: list[str]) -> dict[str, np.ndarray]:
@@ -65,12 +69,19 @@ def setup_porosity_and_conductivity(sim) -> np.ndarray | None:
     sim.nodekchange_addr = sim.modflow_api.get_var_address(
         "NODEKCHANGE", sim.flow_model_name, sim.npf_package_name
     )
+    sim.kchange_ptrs = tuple(
+        sim.modflow_api.get_value_ptr(address)
+        for address in (
+            sim.tdis_kper_addr,
+            sim.tdis_kstp_addr,
+            sim.kchangeper_addr,
+            sim.kchangestp_addr,
+        )
+    )
     sim.modflow_api.set_value(sim.nodekchange_addr, np.ones(sim.nxyz, dtype=np.int32))
     sim.results_porosity = [sim.porosity.copy()]
     sim.results_K = [current_k11.copy()]
     if sim.if_update_density:
-        from mf6pqc.coupling.common import get_calculated_density
-
         sim.k_update_density_prev = get_calculated_density(sim) / 1000.0
         sim.k_update_viscosity_prev = sim.viscosity.copy()
     return current_k11
@@ -82,7 +93,7 @@ def setup_boundary_conductance_updates(sim) -> None:
     for package_name, raw_config in sim.boundary_conductance_updates.items():
         config: dict[str, Any] = dict(raw_config)
         try:
-            cell_index = int(config["cell_index"])
+            cell_index = require_integer("cell_index", config["cell_index"], minimum=-sim.nxyz)
             distance = float(config["distance"])
             area = float(config.get("area", 1.0))
         except (KeyError, TypeError, ValueError) as exc:
@@ -118,6 +129,11 @@ def setup_diffusion_updates(sim) -> None:
         component: sim.modflow_api.get_var_address("DIFFC", get_gwt_model_name(component), "DSP")
         for component in sim.components
     }
+    sim.diffc_ptrs = tuple(
+        sim.modflow_api.get_value_ptr(address) for address in sim.diffc_tags.values()
+    )
+    if any(pointer.size != sim.nxyz for pointer in sim.diffc_ptrs):
+        raise BackendError("GWT diffusion arrays do not match nxyz")
 
 
 def setup_density_update(sim) -> None:
@@ -164,12 +180,11 @@ def write_conductivity_for_step(
 
         write_reference_conductivity(sim, current_k11)
         return
-    current_kper = sim.modflow_api.get_value(sim.tdis_kper_addr)
-    current_kstp = sim.modflow_api.get_value(sim.tdis_kstp_addr)
-    sim.modflow_api.set_value(sim.kchangeper_addr, current_kper)
-    sim.modflow_api.set_value(sim.kchangestp_addr, current_kstp)
+    current_kper, current_kstp, changed_period, changed_step = sim.kchange_ptrs
+    changed_period[:] = current_kper
+    changed_step[:] = current_kstp
     sim.K11_ptr[:] = current_k11
-    sim.K33_ptr[:] = current_k11 * getattr(sim, "k33_ratio", K33_RATIO)
+    np.multiply(current_k11, getattr(sim, "k33_ratio", K33_RATIO), out=sim.K33_ptr)
     update_boundary_conductances(sim, current_k11)
 
 
@@ -177,21 +192,41 @@ def update_medium_properties(
     sim, current_k11: np.ndarray | None, logical_step: int
 ) -> np.ndarray | None:
     """Apply feedback at the coupling algorithm's reaction-commit point."""
-    from mf6pqc.coupling.common import should_save_time_step
-
     if sim.if_update_porosity_K:
         if current_k11 is None:
             raise BackendError("K feedback is enabled but no current K11 field exists")
-        old_porosity = sim.porosity.copy()
-        proposed_porosity = update_porosity(
+        old_porosity = sim.porosity
+        proposed_porosity = calculate_porosity(
             sim.selected_output,
             sim.output_indices,
             sim.mineral_volumes,
             old_porosity,
         )
         new_porosity = np.where(sim.porosity_update_mask, proposed_porosity, old_porosity)
+        clipped = np.logical_and(
+            sim.porosity_update_mask,
+            (new_porosity < MIN_POROSITY) | (new_porosity > MAX_POROSITY),
+        )
+        if np.any(clipped):
+            count = int(np.count_nonzero(clipped))
+            minimum, maximum = float(np.min(new_porosity)), float(np.max(new_porosity))
+            message = f"Porosity reached its bounds in {count} cells at step {logical_step + 1}: range=[{minimum:.6g}, {maximum:.6g}]"
+            if getattr(sim, "fail_on_porosity_clipping", False):
+                raise PropertyUpdateError(message)
+            diagnostics = getattr(sim, "porosity_clipping", None)
+            if diagnostics is not None:
+                if not diagnostics:
+                    _logger.warning(message)
+                diagnostics["updates"] = diagnostics.get("updates", 0) + 1
+                diagnostics["cells"] = diagnostics.get("cells", 0) + count
+                diagnostics["minimum"] = min(diagnostics.get("minimum", minimum), minimum)
+                diagnostics["maximum"] = max(diagnostics.get("maximum", maximum), maximum)
+            np.clip(new_porosity, MIN_POROSITY, MAX_POROSITY, out=new_porosity, where=clipped)
         sim.porosity = new_porosity
-        sim.phreeqc_rm.SetPorosity(new_porosity)
+        if isinstance(sim.phreeqc_rm, CheckedPhreeqcRM):
+            sim.phreeqc_rm.commit_porosity(new_porosity)
+        else:
+            sim.phreeqc_rm.SetPorosity(new_porosity)
         for pointer in sim.thetam_ptrs.values():
             pointer[:] = new_porosity
         if getattr(sim, "energy_enabled", False):
@@ -200,11 +235,9 @@ def update_medium_properties(
             update_energy_porosity(sim, new_porosity)
 
         if sim.if_update_density:
-            from mf6pqc.coupling.common import get_calculated_density
-
             density_new = get_calculated_density(sim) / 1000.0
             viscosity_new = sim.viscosity.copy()
-            current_k11 = sim._update_K(
+            current_k11 = sim.perm_updater.update(
                 current_k11,
                 old_porosity,
                 new_porosity,
@@ -216,23 +249,19 @@ def update_medium_properties(
             sim.k_update_density_prev = density_new
             sim.k_update_viscosity_prev = viscosity_new
         else:
-            current_k11 = sim._update_K(current_k11, old_porosity, new_porosity)
+            current_k11 = sim.perm_updater.update(current_k11, old_porosity, new_porosity)
         if not np.all(np.isfinite(current_k11)) or np.any(current_k11 <= 0.0):
             raise PropertyUpdateError(
                 "Permeability updater returned non-finite or non-positive K values"
             )
-        if should_save_time_step(sim, logical_step):
-            sim.results_porosity.append(new_porosity.copy())
-            sim.results_K.append(current_k11.copy())
 
     if sim.if_update_diffc:
         new_diffc = update_diffc(sim.porosity, sim.d0)
         if not np.all(np.isfinite(new_diffc)) or np.any(new_diffc < 0.0):
             raise PropertyUpdateError("Diffusion updater returned non-finite or negative values")
-        if should_save_time_step(sim, logical_step):
-            sim.results_diffc.append(new_diffc.copy())
-        for _component, address in sim.diffc_tags.items():
-            sim.modflow_api.set_value(address, new_diffc)
+        sim.current_diffusion = new_diffc
+        for pointer in sim.diffc_ptrs:
+            pointer[:] = new_diffc
     return current_k11
 
 

@@ -7,11 +7,13 @@ import time
 
 import numpy as np
 
-from mf6pqc.backends import initialize_modflow6
+from mf6pqc.backends import initialize_modflow6, solve_prepared_modflow
 from mf6pqc.constants import MIN_TIME_STEP
 from mf6pqc.coupling.common import (
     _record_solver_failure,
+    advance_to_end,
     allocate_concentration_buffers,
+    build_nonnegative_slices,
     build_species_slices,
     build_time_step_schedule,
     cache_concentration_variables,
@@ -22,11 +24,9 @@ from mf6pqc.coupling.common import (
     finalize_results,
     get_calculated_density,
     get_coupling_time_step,
-    log_progress,
     read_concentrations_from_modflow,
     run_reaction_step,
     save_time_step_results,
-    simulation_has_time_remaining,
     synchronize_phreeqcrm_solution,
     update_selected_output,
     validate_setup,
@@ -88,6 +88,9 @@ def build_sia_state(sim) -> SIACouplingState:
     return SIACouplingState(
         concentration_variables=concentration_variables,
         species_slices=species_slices,
+        nonnegative_slices=build_nonnegative_slices(
+            sim.components, species_slices, sim.signed_components
+        ),
         transported=transported,
         reaction_input=reaction_input,
         reacted=reacted,
@@ -150,16 +153,7 @@ def solve_modflow_picard(sim, state: SIACouplingState) -> None:
             ) * state.previous_density + sim.sia_density_relaxation * state.candidate_density
             sim.density_ptr[:] = state.previous_density
         maximum = int(iteration_pointer[0])
-        converged = False
-        iterations = 0
-        try:
-            while iterations < maximum:
-                converged = bool(sim.modflow_api.solve(solution_id))
-                iterations += 1
-                if converged:
-                    break
-        finally:
-            sim.modflow_api.finalize_solve(solution_id)
+        converged, iterations = solve_prepared_modflow(sim.modflow_api, solution_id, maximum)
         if not converged:
             _record_solver_failure(sim, solution_id, iterations, picard=True)
 
@@ -350,6 +344,7 @@ def run_picard_iteration(
         sim.components,
         state.species_slices,
         sim.signed_components,
+        nonnegative_slices=getattr(state, "nonnegative_slices", None),
     )
     if sim.sia_rate_evaluator is not None:
         update_sources_from_instantaneous_rates(sim, state, reaction_start_time + dt)
@@ -360,6 +355,7 @@ def run_picard_iteration(
             sim.components,
             state.species_slices,
             sim.signed_components,
+            nonnegative_slices=getattr(state, "nonnegative_slices", None),
         )
         sim.phreeqc_rm.StateApply(1)
         run_reaction_step(sim, state.reaction_input, state.reacted, reaction_start_time, dt)
@@ -445,16 +441,11 @@ def update_sia_after_step(sim, state: SIACouplingState, picard_iterations: int) 
     if sim.if_update_porosity_K:
         commit_reaction_concentrations(sim, state)
     state.mobile_water_volume = state.bulk_cell_volume * sim.porosity * sim.saturation
-    save_time_step_results(sim, state.logical_step, state.current_time)
+    save_time_step_results(
+        sim, state.logical_step, state.current_time, current_k11=state.current_k11
+    )
     sim.sia_iterations.append(picard_iterations)
     state.logical_step += 1
-    log_progress(
-        state.current_time,
-        state.end_time,
-        state.logical_step,
-        f"SIA iters={picard_iterations}",
-        interval=sim.progress_interval,
-    )
 
 
 def sia_time_step(sim, state: SIACouplingState) -> None:
@@ -490,6 +481,7 @@ def sia_time_step(sim, state: SIACouplingState) -> None:
             sim.components,
             state.species_slices,
             sim.signed_components,
+            nonnegative_slices=getattr(state, "nonnegative_slices", None),
         )
         if sim.sia_rate_evaluator is not None:
             synchronize_phreeqcrm_solution(
@@ -515,6 +507,5 @@ def run_sia(sim) -> None:
     _logger.info("\n--- Starting reactive transport simulation (SIA) ---")
     start = time.perf_counter()
     state = build_sia_state(sim)
-    while simulation_has_time_remaining(state.current_time, state.end_time):
-        sia_time_step(sim, state)
+    advance_to_end(sim, state, sia_time_step)
     finalize_results(sim, state.logical_step, start)

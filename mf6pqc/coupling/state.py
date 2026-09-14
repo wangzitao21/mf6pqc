@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, fields
 from typing import Any
 
 import numpy as np
@@ -29,6 +30,7 @@ class StandardCouplingState:
     time_step_schedule: np.ndarray
     transport_step: int = 0
     last_reaction_time: float = 0.0
+    nonnegative_slices: tuple[slice, ...] | None = None
 
 
 @dataclass(slots=True)
@@ -61,3 +63,24 @@ class SIACouplingState:
     picard_iteration: int
     time_step_schedule: np.ndarray
     current_dt: float = 0.0
+    nonnegative_slices: tuple[slice, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CouplingHooks:
+    """Observe live solver state; copy arrays when retaining a snapshot.
+
+    Transport and reaction hooks run before SNIA commits chemistry feedback.
+    Step hooks run after a complete logical step for every coupling method.
+    """
+
+    on_initialize: Callable[[Any, Any], None] | None = None
+    on_transport: Callable[[Any, StandardCouplingState, float], None] | None = None
+    on_reaction: Callable[[Any, StandardCouplingState], None] | None = None
+    on_step: Callable[[Any, Any], None] | None = None
+
+    def __post_init__(self):
+        for item in fields(self):
+            value = getattr(self, item.name)
+            if value is not None and not callable(value):
+                raise TypeError(f"{item.name} must be callable or None")

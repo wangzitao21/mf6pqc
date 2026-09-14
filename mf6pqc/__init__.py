@@ -12,7 +12,9 @@ from mf6pqc.config import (
     SimulationConfig,
 )
 from mf6pqc.coupling import CouplingMethod
+from mf6pqc.coupling.state import CouplingHooks
 from mf6pqc.mf6pqc import MF6PQC, mf6pqc
+from mf6pqc.parallel import ProcessBackendFactory
 from mf6pqc.types import ArrayLike
 
 __all__ = [
@@ -21,11 +23,13 @@ __all__ = [
     "BackendPaths",
     "CellFields",
     "ChemistryOptions",
+    "CouplingHooks",
     "CouplingMethod",
     "EnergyOptions",
     "FeedbackOptions",
     "MF6PQC",
     "OutputOptions",
+    "ProcessBackendFactory",
     "SIAOptions",
     "SimulationConfig",
     "mf6pqc",

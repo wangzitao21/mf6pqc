@@ -11,7 +11,7 @@ if str(EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(EXAMPLES_DIR))
 
 from ex009_PHT3D_09.modflow_model import build_model
-from example_utils import configure_logging, library_path, runtime_path
+from example_utils import configure_logging, library_path, process_backend, runtime_path
 
 from mf6pqc import (
     MF6PQC,
@@ -55,7 +55,8 @@ def main() -> None:
     simulation_config = SimulationConfig(
         case_name="ex009",
         nxyz=NXYZ,
-        nthreads=6,
+        nthreads=1,
+        backend_factory=process_backend(16),
         paths=BackendPaths(
             database=INPUT_DIR / "database.dat",
             chemistry_input=INPUT_DIR / "input.pqi",

@@ -7,6 +7,7 @@ import time
 
 from mf6pqc.backends import initialize_modflow6
 from mf6pqc.coupling.common import (
+    advance_to_end,
     build_standard_state,
     cache_basic_geometry,
     commit_reaction_concentrations,
@@ -14,11 +15,9 @@ from mf6pqc.coupling.common import (
     finalize_results,
     get_calculated_density,
     get_coupling_time_step,
-    log_progress,
     read_concentrations_from_modflow,
     run_reaction_step,
     save_time_step_results,
-    simulation_has_time_remaining,
     solve_modflow_solutions,
     update_selected_output,
     validate_setup,
@@ -27,7 +26,6 @@ from mf6pqc.coupling.state import StandardCouplingState
 from mf6pqc.energy import (
     capture_flow_inputs,
     capture_flow_response,
-    save_energy_time_step_results,
     setup_energy_coupling,
 )
 from mf6pqc.exceptions import ConfigurationError
@@ -63,22 +61,17 @@ def thermal_time_step(sim, state: StandardCouplingState) -> None:
         sim.components,
         state.species_slices,
         sim.signed_components,
+        nonnegative_slices=getattr(state, "nonnegative_slices", None),
     )
     # run_reaction_step synchronizes the post-GWE temperature before RunCells.
     run_reaction_step(sim, state.transported, state.reacted, reaction_start_time, dt)
     update_selected_output(sim)
     state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
     commit_reaction_concentrations(sim, state)
-    save_time_step_results(sim, state.logical_step, state.current_time)
-    save_energy_time_step_results(sim, state.logical_step)
-    state.logical_step += 1
-    log_progress(
-        state.current_time,
-        state.end_time,
-        state.logical_step,
-        suffix="GWE/VSC",
-        interval=sim.progress_interval,
+    save_time_step_results(
+        sim, state.logical_step, state.current_time, current_k11=state.current_k11
     )
+    state.logical_step += 1
 
 
 def run_thermal_snia(sim) -> None:
@@ -92,8 +85,7 @@ def run_thermal_snia(sim) -> None:
     cache_basic_geometry(sim)
     setup_energy_coupling(sim)
     state = build_standard_state(sim)
-    while simulation_has_time_remaining(state.current_time, state.end_time):
-        thermal_time_step(sim, state)
+    advance_to_end(sim, state, thermal_time_step)
     finalize_results(sim, state.logical_step, start)
 
 

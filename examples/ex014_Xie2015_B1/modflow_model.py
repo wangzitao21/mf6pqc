@@ -147,7 +147,7 @@ def build_model(
         )
         transport_ims = flopy.mf6.ModflowIms(
             simulation,
-            print_option="SUMMARY",
+            print_option="NONE",
             outer_dvclose=hclose,
             outer_maximum=nouter,
             under_relaxation="NONE",

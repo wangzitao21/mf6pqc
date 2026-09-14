@@ -1,10 +1,7 @@
 <p align="center">
-  <img src=".github/assets/mf6pqc-logo.png" width="430" alt="mf6pqc：穿过含水层网格的水流与矿物反应" />
+  <img src=".github/assets/mf6pqc-logo.png" width="430" alt="mf6pqc：a modular MODFLOW 6–PhreeqcRM framework for variable-density reactive transport with evolving porosity and hydraulic conductivity" />
 </p>
-
-<h1 align="center">MF6PQC</h1>
-<p align="center"><b>连接地下水流动、溶质运移与水–岩反应</b></p>
-<p align="center">基于 MODFLOW 6 与 PhreeqcRM 的 Python 反应运移框架</p>
+<p align="center">A modular MODFLOW 6–PhreeqcRM framework for variable-density reactive transport with evolving porosity and hydraulic conductivity</p>
 
 <p align="center">
   <a href="https://pypi.org/project/mf6pqc/"><img src="https://img.shields.io/pypi/v/mf6pqc?color=087e8b" alt="PyPI" /></a>
@@ -56,14 +53,14 @@ flowchart LR
     F -.-> D
 ```
 
-| 能力 | 内容 |
-| --- | --- |
-| 耦合算法 | SNIA、SIA 与 Strang 分裂；可比较精度、迭代次数和计算开销 |
-| 化学过程 | 使用 PhreeqcRM 管理 PHREEQC 溶液、平衡相、动力学及其他受支持的反应实体 |
-| 密度反馈 | 将化学计算得到的溶液密度传入 MODFLOW 6 的密度耦合路径 |
-| 介质演化 | 根据矿物体积变化更新孔隙度，并按配置更新渗透系数和扩散系数 |
-| 温度与黏度 | 可选 GWE/VSC 路径；热耦合案例展示温度、反应速率和黏度的相互影响 |
-| 结果管理 | 保存组分清单、时间、反应结果及启用的物性；新运行附带环境与输入文件摘要 |
+| 能力       | 内容                                                                   |
+| ---------- | ---------------------------------------------------------------------- |
+| 耦合算法   | SNIA、SIA 与 Strang 分裂；可比较精度、迭代次数和计算开销               |
+| 化学过程   | 使用 PhreeqcRM 管理 PHREEQC 溶液、平衡相、动力学及其他受支持的反应实体 |
+| 密度反馈   | 将化学计算得到的溶液密度传入 MODFLOW 6 的密度耦合路径                  |
+| 介质演化   | 根据矿物体积变化更新孔隙度，并按配置更新渗透系数和扩散系数             |
+| 温度与黏度 | 可选 GWE/VSC 路径；热耦合案例展示温度、反应速率和黏度的相互影响        |
+| 结果管理   | 保存组分清单、时间、反应结果及启用的物性；新运行附带环境与输入文件摘要 |
 
 各案例独立设置反馈项。开启某种反馈需要相应的物理假设、参数及 MODFLOW 包配置。
 
@@ -76,6 +73,8 @@ flowchart LR
 ```bash
 python -m pip install mf6pqc
 ```
+
+建议使用 PhreeqcRM 0.0.17，以避免 0.0.18 在本项目已验证的 Python/OpenMP 配置中因 GIL 锁竞争造成的原生多线程性能下降。本项目依赖固定为 `phreeqcrm==0.0.17`；已有环境可执行 `python -m pip install "phreeqcrm==0.0.17"` 切换版本。
 
 复现仓库案例时，获取完整仓库并安装案例依赖：
 
@@ -99,11 +98,11 @@ jupyter lab examples/ex018_Hamann2015/plot.ipynb
 
 从 [USGS 官方 MODFLOW 6.8.0 发布页](https://github.com/MODFLOW-ORG/modflow6/releases/tag/6.8.0) 下载与操作系统相符的发行包，将其中的动态库和可执行文件放到仓库的 `bin/mf6.8.0/`。PyPI 安装不会自动安装 MODFLOW 动态库。
 
-| 操作系统 | 动态库 | 可执行文件 |
-| --- | --- | --- |
-| Windows | `libmf6.dll` | `mf6.exe` |
-| Linux | `libmf6.so` | `mf6` |
-| macOS | `libmf6.dylib` | `mf6` |
+| 操作系统 | 动态库         | 可执行文件 |
+| -------- | -------------- | ---------- |
+| Windows  | `libmf6.dll`   | `mf6.exe`  |
+| Linux    | `libmf6.so`    | `mf6`      |
+| macOS    | `libmf6.dylib` | `mf6`      |
 
 也可以通过 `MF6PQC_BIN` 指定二进制所在目录，或分别设置 `MF6PQC_LIBMF6` 与 `MF6PQC_MF6_EXE`。例如在 PowerShell 中：
 
@@ -141,19 +140,19 @@ jupyter lab examples/ex001_PHT3D_01/plot.ipynb
 
 配置与建模函数放在 `modflow_model.py` 或 `run.py`，批量对比逻辑放在 `run.py`，后处理与绘图放在 `plot.ipynb`。案例共用 `examples/` 根目录的 [example_utils.py](examples/example_utils.py)，用于路径定位、读取结果和归档恢复；使用或复制案例时需保留该文件。
 
-| 案例 | 主要内容 | 论文图 |
-| --- | --- | --- |
-| [ex019_Splitting_KineticDecay1D](examples/ex019_Splitting_KineticDecay1D/plot.ipynb) | 动力学衰减问题中的 SNIA、SIA、Strang 精度与开销 | 图 3 |
-| [ex003_PHT3D_03](examples/ex003_PHT3D_03/plot.ipynb) | 含铁碳酸盐体系的一维反应运移 | 图 4 |
-| [ex010_PHT3D_10](examples/ex010_PHT3D_10/plot.ipynb) | 非均质含水层中的二维多组分反应运移 | 图 5 |
-| [ex018_Hamann2015](examples/ex018_Hamann2015/plot.ipynb) | 蒸发浓缩、密度环流与蒸发岩矿物分带 | 图 6–7 |
-| [ex016_Xie2015_B3](examples/ex016_Xie2015_B3/plot.ipynb) | 多矿物反应、孔隙度及水力响应 | 图 8 |
-| [ex017_Xie2015_B4](examples/ex017_Xie2015_B4/plot.ipynb) | 矿物分布与有效扩散系数反馈 | 图 9 |
-| [ex021_Brine_Feedback2D](examples/ex021_Brine_Feedback2D/plot.ipynb) | 非均质蒸发岩溶浸中的四种反馈组合 | 图 10–12 |
-| [ex001_PHT3D_01](examples/ex001_PHT3D_01/plot.ipynb)–[ex013_PHT3D_13](examples/ex013_PHT3D_13/plot.ipynb) | PHT3D 基准系列；各案例保留独立输入和参考数据 | 含上述图 4–5 |
-| [ex014_Xie2015_B1](examples/ex014_Xie2015_B1/plot.ipynb)、[ex015_Xie2015_B2](examples/ex015_Xie2015_B2/plot.ipynb) | 矿物反应与水力性质演化的补充对照 | — |
-| [ex020_Splitting_RedoxFront2D](examples/ex020_Splitting_RedoxFront2D/plot.ipynb) | 二维氧化还原前沿的分裂误差比较 | — |
-| [ex999_Thermal_ReactiveColumn1D](examples/ex999_Thermal_ReactiveColumn1D/plot.ipynb) | 温度、反应与黏度反馈 | — |
+| 案例                                                                                                               | 主要内容                                        | 论文图       |
+| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- | ------------ |
+| [ex019_Splitting_KineticDecay1D](examples/ex019_Splitting_KineticDecay1D/plot.ipynb)                               | 动力学衰减问题中的 SNIA、SIA、Strang 精度与开销 | 图 3         |
+| [ex003_PHT3D_03](examples/ex003_PHT3D_03/plot.ipynb)                                                               | 含铁碳酸盐体系的一维反应运移                    | 图 4         |
+| [ex010_PHT3D_10](examples/ex010_PHT3D_10/plot.ipynb)                                                               | 非均质含水层中的二维多组分反应运移              | 图 5         |
+| [ex018_Hamann2015](examples/ex018_Hamann2015/plot.ipynb)                                                           | 蒸发浓缩、密度环流与蒸发岩矿物分带              | 图 6–7       |
+| [ex016_Xie2015_B3](examples/ex016_Xie2015_B3/plot.ipynb)                                                           | 多矿物反应、孔隙度及水力响应                    | 图 8         |
+| [ex017_Xie2015_B4](examples/ex017_Xie2015_B4/plot.ipynb)                                                           | 矿物分布与有效扩散系数反馈                      | 图 9         |
+| [ex021_Brine_Feedback2D](examples/ex021_Brine_Feedback2D/plot.ipynb)                                               | 非均质蒸发岩溶浸中的四种反馈组合                | 图 10–12     |
+| [ex001_PHT3D_01](examples/ex001_PHT3D_01/plot.ipynb)–[ex013_PHT3D_13](examples/ex013_PHT3D_13/plot.ipynb)          | PHT3D 基准系列；各案例保留独立输入和参考数据    | 含上述图 4–5 |
+| [ex014_Xie2015_B1](examples/ex014_Xie2015_B1/plot.ipynb)、[ex015_Xie2015_B2](examples/ex015_Xie2015_B2/plot.ipynb) | 矿物反应与水力性质演化的补充对照                | —            |
+| [ex020_Splitting_RedoxFront2D](examples/ex020_Splitting_RedoxFront2D/plot.ipynb)                                   | 二维氧化还原前沿的分裂误差比较                  | —            |
+| [ex999_Thermal_ReactiveColumn1D](examples/ex999_Thermal_ReactiveColumn1D/plot.ipynb)                               | 温度、反应与黏度反馈                            | —            |
 
 图 1–2 为概念与程序结构示意图，不对应独立的案例运行结果。
 
@@ -170,11 +169,11 @@ jupyter lab examples/ex001_PHT3D_01/plot.ipynb
 ### 卤水案例的四种情景
 
 | 标签 | 密度反馈 | 孔隙度–渗透系数反馈 |
-| --- | :---: | :---: |
-| S00 | 关闭 | 关闭 |
-| S10 | 开启 | 关闭 |
-| S01 | 关闭 | 开启 |
-| S11 | 开启 | 开启 |
+| ---- | :------: | :-----------------: |
+| S00  |   关闭   |        关闭         |
+| S10  |   开启   |        关闭         |
+| S01  |   关闭   |        开启         |
+| S11  |   开启   |        开启         |
 
 ```bash
 # 依次执行四种情景；相同配置且已完成的标签会直接复用。

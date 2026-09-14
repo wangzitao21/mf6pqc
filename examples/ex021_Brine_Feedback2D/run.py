@@ -24,6 +24,7 @@ from example_utils import (
     configure_logging,
     file_digest,
     library_path,
+    process_backend,
     runtime_path,
 )
 
@@ -32,26 +33,12 @@ from mf6pqc import (
     BackendPaths,
     CellFields,
     ChemistryOptions,
+    CouplingHooks,
     FeedbackOptions,
     OutputOptions,
     SimulationConfig,
 )
-from mf6pqc.backends import initialize_modflow6
-from mf6pqc.coupling.common import (
-    build_standard_state,
-    cache_basic_geometry,
-    enforce_component_domains,
-    finalize_results,
-    get_calculated_density,
-    get_coupling_time_step,
-    read_concentrations_from_modflow,
-    run_reaction_step,
-    save_time_step_results,
-    solve_modflow_solutions,
-    update_selected_output,
-    write_concentrations_to_modflow,
-)
-from mf6pqc.feedback import update_medium_properties, write_conductivity_for_step
+from mf6pqc.coupling.common import write_concentrations_to_modflow
 from mf6pqc.permeability import BasePermeabilityUpdater, KozenyCarmanUpdater
 
 MINERAL_MOLAR_VOLUMES = dict(
@@ -195,7 +182,8 @@ def create_simulator(
     simulation_config = SimulationConfig(
         case_name="ex021",
         nxyz=nxyz,
-        nthreads=nthreads,
+        nthreads=1,
+        backend_factory=process_backend(nthreads),
         paths=BackendPaths(
             database=CASE_DIR / "input_data" / "database.dat",
             chemistry_input=CASE_DIR / "input_data" / "input.pqi",
@@ -232,7 +220,12 @@ def create_simulator(
 def simulation_fingerprint() -> dict:
     """Hash inputs and source files to recognize reusable completed runs."""
     sources = ("run.py", "modflow_model.py")
+    framework = Path(sys.modules["mf6pqc"].__file__).parent
     return {
+        "framework_sha256": {
+            path.relative_to(framework).as_posix(): file_digest(path)
+            for path in sorted(framework.rglob("*.py"))
+        },
         "database_sha256": file_digest(CASE_DIR / "input_data" / "database.dat"),
         "input_sha256": file_digest(CASE_DIR / "input_data" / "input.pqi"),
         "source_sha256": {
@@ -315,13 +308,15 @@ def run_scenario(
                 reference_density=rho0,
                 update_density=scenario[1] == "1",
             )
-            initialize_modflow6(sim)
-            cache_basic_geometry(sim)
-            state = build_standard_state(sim)
-            api = sim.modflow_api
-            varnames = list(api.get_input_var_names())
-            (out / "api_variables.txt").write_text("\n".join(varnames), encoding="utf-8")
-            qout = api.get_value_ptr(api.get_var_address("SIMVALS", "gwf_model", "OUTLET"))
+            qout = None
+
+            def on_initialize(sim, state):
+                nonlocal qout
+                api = sim.modflow_api
+                varnames = list(api.get_input_var_names())
+                (out / "api_variables.txt").write_text("\n".join(varnames), encoding="utf-8")
+                qout = api.get_value_ptr(api.get_var_address("SIMVALS", "gwf_model", "OUTLET"))
+
             zout = config.outlet_layers * config.nx + config.nx - 1
             initial_aq = initial.reshape(sim.ncomps, config.nxyz).copy()
             mass0 = inventories(sim, initial, config, chemistry=chemistry)
@@ -355,17 +350,9 @@ def run_scenario(
                 encoding="utf-8",
             )
             np.save(out / "initial_K.npy", k)
-            while state.logical_step < config.steps:
-                dt = get_coupling_time_step(state)
-                api.prepare_time_step(dt)
-                write_conductivity_for_step(sim, state.current_k11, state.logical_step)
-                density = get_calculated_density(sim) if sim.if_update_density else None
-                solve_modflow_solutions(sim, state, density)
-                api.finalize_time_step()
-                state.current_time = float(api.get_current_time())
-                read_concentrations_from_modflow(
-                    state.concentration_variables, state.species_slices, state.transported
-                )
+            uncommitted = None
+
+            def on_transport(sim, state, dt):
                 trans = state.transported.reshape(sim.ncomps, config.nxyz)
                 flux = config.injection_rate * injection[erows]
                 flux += np.sum(
@@ -373,24 +360,19 @@ def run_scenario(
                     + np.minimum(qout, 0)[None, :] * trans[erows][:, zout],
                     axis=1,
                 )
-                net_flux += flux * dt * 1000
-                enforce_component_domains(
-                    state.transported, sim.components, state.species_slices, sim.signed_components
-                )
-                run_reaction_step(
-                    sim, state.transported, state.reacted, state.last_reaction_time, dt
-                )
-                state.last_reaction_time = state.current_time
-                update_selected_output(sim)
-                state.current_k11 = update_medium_properties(
-                    sim, state.current_k11, state.logical_step
-                )
-                if sim.if_update_porosity_K and (not legacy_commit):
-                    state.reacted[:] = sim.phreeqc_rm.GetConcentrations()
-                write_concentrations_to_modflow(
-                    state.concentration_variables, state.species_slices, state.reacted
-                )
-                save_time_step_results(sim, state.logical_step, state.current_time)
+                net_flux[:] += flux * dt * 1000
+
+            def on_reaction(sim, state):
+                nonlocal uncommitted
+                uncommitted = state.reacted.copy()
+
+            def on_step(sim, state):
+                api = sim.modflow_api
+                if legacy_commit:
+                    state.reacted[:] = uncommitted
+                    write_concentrations_to_modflow(
+                        state.concentration_variables, state.species_slices, state.reacted
+                    )
                 aq = state.reacted.reshape(sim.ncomps, config.nxyz)
                 current = inventories(sim, state.reacted, config, chemistry=chemistry)
                 error = current - mass0 - net_flux
@@ -423,7 +405,7 @@ def run_scenario(
                     mass_error_fraction=(error / mass0).tolist(),
                 )
                 history.append(log)
-                step = state.logical_step + 1
+                step = state.logical_step
                 if step in save_steps:
                     heads.append(api.get_value(api.get_var_address("X", "gwf_model")).copy())
                     flux_out.append(qout.copy())
@@ -441,8 +423,15 @@ def run_scenario(
                 if step == 1 or step % 25 == 0:
                     print(json.dumps(dict(step=step, **log)), flush=True)
                     (out / "progress.json").write_text(json.dumps(log, indent=2), encoding="utf-8")
-                state.logical_step += 1
-            finalize_results(sim, state.logical_step, start)
+
+            sim.run(
+                hooks=CouplingHooks(
+                    on_initialize=on_initialize,
+                    on_transport=on_transport,
+                    on_reaction=on_reaction if legacy_commit else None,
+                    on_step=on_step,
+                )
+            )
             sim.save_results()
             np.save(out / "aqueous_transport.npy", np.stack(aq_frames))
             np.save(out / "heads.npy", np.stack(heads))
@@ -473,7 +462,9 @@ def main() -> None:
     parser.add_argument("--days", type=float, default=DEFAULT_CONFIG.days)
     parser.add_argument("--dt", type=float, default=DEFAULT_CONFIG.dt)
     parser.add_argument("--save-every", type=float, default=DEFAULT_CONFIG.save_every)
-    parser.add_argument("--threads", type=int, default=8)
+    parser.add_argument(
+        "--threads", type=int, default=8, help="number of chemistry worker processes"
+    )
     parser.add_argument("--label")
     parser.add_argument("--force", action="store_true")
     parser.add_argument(

@@ -72,6 +72,9 @@ class ExampleResultTests(unittest.TestCase):
         import matplotlib.pyplot as plt
 
         self.addCleanup(plt.close, "all")
+        self.directory = self.directory / "ex006_PHT3D_06"
+        self.directory.mkdir()
+        (self.directory / "run.py").touch()
         times = np.array([0.0, 0.1, 0.2])
         values = np.arange(18.0).reshape(3, 3, 2) / 10000.0
         self.write_results(values, times)
@@ -96,8 +99,10 @@ class ExampleResultTests(unittest.TestCase):
             "OUTPUT_DIR": self.directory / "output",
             "load_results": helpers.load_results,
         }
-        with patch.object(plt, "show"):
-            for cell in notebook["cells"][1:]:
+        with patch.object(plt, "show"), patch.object(Path, "cwd", return_value=self.directory):
+            for cell in notebook["cells"]:
+                if cell["cell_type"] != "code":
+                    continue
                 exec(compile("".join(cell["source"]), str(notebook_path), "exec"), namespace)
         np.testing.assert_array_equal(namespace["result_times"], times)
         self.assertEqual(namespace["headings"], ["Na", "Ca", "T"])

@@ -13,6 +13,7 @@ from unittest.mock import patch
 import numpy as np
 
 from mf6pqc.coupling.common import (
+    advance_to_end,
     commit_reaction_concentrations,
     run_reaction_step,
     update_selected_output,
@@ -20,6 +21,7 @@ from mf6pqc.coupling.common import (
 )
 from mf6pqc.coupling.sia import sia_time_step
 from mf6pqc.coupling.snia import standard_time_step
+from mf6pqc.coupling.state import CouplingHooks
 from mf6pqc.coupling.strang import strang_time_step
 from mf6pqc.coupling.thermal_snia import thermal_time_step
 from mf6pqc.exceptions import BackendError, CouplingError
@@ -157,7 +159,7 @@ def make_case(*, feedback=True, thermal=False, density=False):
         headings=["d_Matrix"],
         selected_output=np.zeros((1, 3)),
         thetam_ptrs={name: porosity.copy() for name in components},
-        _update_K=KozenyCarmanUpdater().update,
+        perm_updater=KozenyCarmanUpdater(),
         save_interval=1,
         save_interval_offset=0,
         save_steps=None,
@@ -226,6 +228,63 @@ def make_case(*, feedback=True, thermal=False, density=False):
     )
     sim.modflow_api = RecordingTransport(sim, state)
     return sim, state, initial
+
+
+class HookTests(unittest.TestCase):
+    def test_hooks_observe_transport_reaction_and_committed_inventory_in_order(self):
+        sim, state, _ = make_case()
+        expected = transport_inventory(sim, state)
+        events = []
+
+        def initialize(sim, state):
+            events.append(("initialize", state.logical_step))
+
+        def transport(sim, state, dt):
+            events.append(("transport", state.logical_step))
+            self.assertEqual(dt, 1.0)
+            np.testing.assert_array_equal(state.transported, packed_concentrations(state))
+
+        def reaction(sim, state):
+            events.append(("reaction", state.logical_step))
+            np.testing.assert_array_equal(sim.selected_output, sim.phreeqc_rm.selected)
+
+        def completed(sim, state):
+            events.append(("step", state.logical_step))
+            np.testing.assert_allclose(transport_inventory(sim, state), expected)
+            self.assertEqual(sim.result_times[-1], state.current_time)
+
+        sim._coupling_hooks = CouplingHooks(initialize, transport, reaction, completed)
+        with patch("mf6pqc.coupling.snia.write_conductivity_for_step"):
+            advance_to_end(sim, state, standard_time_step)
+        self.assertEqual(
+            events,
+            [
+                ("initialize", 0),
+                ("transport", 0),
+                ("reaction", 0),
+                ("step", 1),
+                ("transport", 1),
+                ("reaction", 1),
+                ("step", 2),
+            ],
+        )
+
+    def test_transport_hook_runs_when_chemistry_is_deferred(self):
+        sim, state, _ = make_case(feedback=False)
+        sim.reaction_steps = frozenset({2})
+        sim.save_steps = frozenset({2})
+        events = []
+        sim._coupling_hooks = CouplingHooks(
+            on_transport=lambda sim, state, dt: events.append(state.current_time)
+        )
+        advance_to_end(sim, state, standard_time_step)
+        self.assertEqual(events, [1.0, 2.0])
+        self.assertEqual(sim.phreeqc_rm.reaction_intervals, [(0.0, 172800.0)])
+        self.assertEqual(sim.result_times, [0.0, 2.0])
+
+    def test_hook_configuration_rejects_noncallables(self):
+        with self.assertRaisesRegex(TypeError, "on_step"):
+            CouplingHooks(on_step=42)
 
 
 class PorosityHandoffTests(unittest.TestCase):

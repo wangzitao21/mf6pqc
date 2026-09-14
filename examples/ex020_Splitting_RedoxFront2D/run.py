@@ -224,6 +224,7 @@ def run_realization(
             strang_half_steps=method == "Strang",
         )
         simulator.run(method=method)
+        simulator.save_results()
         fields = {}
         for component in REPORT_COMPONENTS:
             model_name = get_gwt_model_name(component)

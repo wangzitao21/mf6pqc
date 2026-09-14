@@ -51,6 +51,15 @@ def runtime_path(case_file: str | Path, kind: str, *, override: str | None = Non
     return base / kind
 
 
+def process_backend(default_processes: int = 16):
+    from mf6pqc import ProcessBackendFactory
+
+    requested = int(os.environ.get("MF6PQC_CHEMISTRY_PROCESSES", default_processes))
+    if requested <= 0:
+        raise ValueError("MF6PQC_CHEMISTRY_PROCESSES must be positive")
+    return ProcessBackendFactory(processes=min(requested, os.cpu_count() or 1))
+
+
 def configure_logging() -> None:
     """Use the same concise progress-log format in each executable entry point."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")

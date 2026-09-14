@@ -10,7 +10,6 @@ prune examples/*/simulation
 prune examples/*/__pycache__
 include examples/*/output/.gitkeep
 include examples/*/simulation/.gitkeep
-prune article
 prune cases
 prune references
 prune bin

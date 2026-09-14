@@ -208,6 +208,7 @@ def run_method(method: str, cfl: float) -> tuple[np.ndarray, dict]:
             pore_velocity=VELOCITY_M_PER_DAY,
         )
         simulator.run(method=method)
+        simulator.save_results()
         address = simulator.modflow_api.get_var_address("X", get_gwt_model_name("Spe"))
         full_profile = np.asarray(simulator.modflow_api.get_value(address), dtype=float).copy()
         spe_index = species.index("Spe")

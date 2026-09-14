@@ -8,14 +8,25 @@ from typing import Any
 
 import numpy as np
 
+from mf6pqc.backends import CheckedPhreeqcRM, solve_prepared_modflow
 from mf6pqc.constants import (
-    DENSITY_SCALE,
     MIN_CONCENTRATION,
     SECONDS_PER_DAY,
 )
 from mf6pqc.coupling.state import SIACouplingState, StandardCouplingState
 from mf6pqc.exceptions import BackendError, ConvergenceError, CouplingError
 from mf6pqc.feedback import prepare_feedback
+from mf6pqc.properties import get_calculated_density as get_calculated_density
+from mf6pqc.results import (
+    ProgressReporter,
+    prepare_results,
+)
+from mf6pqc.results import (
+    save_time_step_results as save_time_step_results,
+)
+from mf6pqc.results import (
+    should_save_time_step as should_save_time_step,
+)
 from mf6pqc.utils import get_gwt_model_name, get_species_slice
 
 _logger = logging.getLogger(__name__)
@@ -168,6 +179,23 @@ def simulation_has_time_remaining(current_time: float, end_time: float) -> bool:
     return current_time < end_time - time_tolerance(end_time)
 
 
+def advance_to_end(sim, state, step, *, total_steps=None) -> None:
+    total_steps = state.time_step_schedule.size if total_steps is None else total_steps
+    prepare_results(sim, state, total_steps)
+    hooks = getattr(sim, "_coupling_hooks", None)
+    if hooks is not None and hooks.on_initialize is not None:
+        hooks.on_initialize(sim, state)
+    on_step = None if hooks is None else hooks.on_step
+    progress = ProgressReporter(state.end_time, total_steps, sim.progress_interval)
+    progress.report(state)
+    limit = state.end_time - time_tolerance(state.end_time)
+    while state.current_time < limit:
+        step(sim, state)
+        if on_step is not None:
+            on_step(sim, state)
+        progress.report(state)
+
+
 def get_coupling_time_step(state) -> float:
     """Return the scheduled duration of the current logical coupling step."""
     index = state.logical_step
@@ -217,7 +245,8 @@ def read_concentrations_from_phreeqcrm(sim, destination: np.ndarray) -> None:
         )
     if not np.all(np.isfinite(values)):
         raise CouplingError("PhreeqcRM produced non-finite concentrations")
-    destination[:] = values
+    if values is not destination:
+        destination[:] = values
 
 
 def commit_reaction_concentrations(sim, state: StandardCouplingState | SIACouplingState) -> None:
@@ -245,6 +274,8 @@ def enforce_component_domains(
     components: list[str] | tuple[str, ...],
     species_slices: tuple[slice, ...] | list[slice],
     signed_components: frozenset[str] | set[str] | tuple[str, ...] = ("charge",),
+    *,
+    nonnegative_slices=None,
 ) -> None:
     """Apply PHREEQC component domains after a transport solve.
 
@@ -253,17 +284,26 @@ def enforce_component_domains(
     explicitly includes negative values.  Clipping it with the element totals
     changes alkalinity and can strongly perturb pH in otherwise dilute models.
     """
+    if nonnegative_slices is None:
+        nonnegative_slices = build_nonnegative_slices(components, species_slices, signed_components)
+    for component_slice in nonnegative_slices:
+        values = concentrations[component_slice]
+        np.maximum(values, MIN_CONCENTRATION, out=values)
+
+
+def build_nonnegative_slices(components, species_slices, signed_components):
     if len(components) != len(species_slices):
         raise ValueError("components and species_slices must have equal length")
     signed = {component.casefold() for component in signed_components}
-    for component, component_slice in zip(components, species_slices, strict=False):
+    blocks = []
+    for component, block in zip(components, species_slices, strict=True):
         if component.casefold() in signed:
             continue
-        np.maximum(
-            concentrations[component_slice],
-            MIN_CONCENTRATION,
-            out=concentrations[component_slice],
-        )
+        if blocks and blocks[-1].stop == block.start:
+            blocks[-1] = slice(blocks[-1].start, block.stop)
+        else:
+            blocks.append(block)
+    return tuple(blocks)
 
 
 def run_reaction_step(
@@ -286,30 +326,29 @@ def run_reaction_step(
         raise CouplingError(f"Reaction time step must be finite and nonnegative: {dt}")
     if not np.all(np.isfinite(transported)):
         raise CouplingError("Transport produced non-finite concentrations")
+    batched = isinstance(sim.phreeqc_rm, CheckedPhreeqcRM)
+    temperature = None
     if getattr(sim, "energy_enabled", False):
         from mf6pqc.energy import synchronize_temperature_to_chemistry
 
-        synchronize_temperature_to_chemistry(sim)
-    sim.phreeqc_rm.SetConcentrations(transported)
-    sim.phreeqc_rm.SetTime(start_time * SECONDS_PER_DAY)
-    sim.phreeqc_rm.SetTimeStep(dt * SECONDS_PER_DAY)
-    sim.phreeqc_rm.RunCells()
-    read_concentrations_from_phreeqcrm(sim, reacted)
-
-
-def get_calculated_density(sim) -> np.ndarray:
-    """Return the configured chemistry density field in kg/m3."""
-    if sim.use_phreeqc_calculated_density:
-        density = np.asarray(sim.phreeqc_rm.GetDensityCalculated(), dtype=float)
+        temperature = synchronize_temperature_to_chemistry(sim, write=not batched)
+        if not sim.sync_gwe_temperature_to_phreeqc:
+            temperature = None
+    if batched:
+        sim.phreeqc_rm.advance_into(
+            transported,
+            start_time * SECONDS_PER_DAY,
+            dt * SECONDS_PER_DAY,
+            reacted,
+            sim.selected_output,
+            temperature,
+        )
     else:
-        density = np.asarray(sim.selected_output[-1], dtype=float)
-    density = density.ravel()
-    if density.size != sim.nxyz:
-        raise BackendError(f"Chemistry density has {density.size} cells; expected {sim.nxyz}")
-    density = density * DENSITY_SCALE
-    if not np.all(np.isfinite(density)) or np.any(density <= 0.0):
-        raise CouplingError("Chemistry produced non-positive or non-finite density")
-    return density
+        sim.phreeqc_rm.SetConcentrations(transported)
+        sim.phreeqc_rm.SetTime(start_time * SECONDS_PER_DAY)
+        sim.phreeqc_rm.SetTimeStep(dt * SECONDS_PER_DAY)
+        sim.phreeqc_rm.RunCells()
+    read_concentrations_from_phreeqcrm(sim, reacted)
 
 
 def update_selected_output(sim) -> None:
@@ -405,27 +444,9 @@ def solve_modflow_solutions(
         # prepare_solve reloads stress-period package arrays.
         update_water_only_sink_sources(sim, state)
         maximum = int(iteration_pointer[0])
-        converged = False
-        iterations = 0
-        try:
-            while iterations < maximum:
-                converged = bool(sim.modflow_api.solve(solution_id))
-                iterations += 1
-                if converged:
-                    break
-        finally:
-            sim.modflow_api.finalize_solve(solution_id)
+        converged, iterations = solve_prepared_modflow(sim.modflow_api, solution_id, maximum)
         if not converged:
             _record_solver_failure(sim, solution_id, iterations, picard=False)
-
-
-def should_save_time_step(sim, logical_step: int) -> bool:
-    """Return whether a completed zero-based logical step is retained."""
-    if sim.save_steps is not None:
-        return (logical_step + 1) in sim.save_steps
-    if sim.save_interval <= 0:
-        raise ValueError("save_interval must be a positive integer")
-    return (logical_step + sim.save_interval_offset) % sim.save_interval == 0
 
 
 def should_run_reaction(sim, logical_step: int) -> bool:
@@ -433,27 +454,6 @@ def should_run_reaction(sim, logical_step: int) -> bool:
     if sim.reaction_steps is None:
         return True
     return (logical_step + 1) in sim.reaction_steps
-
-
-def save_time_step_results(sim, logical_step: int, current_time: float | None = None) -> None:
-    """Store a copy of selected output when the output schedule requests it."""
-    if should_save_time_step(sim, logical_step):
-        sim.results.append(sim.selected_output.copy())
-        if current_time is not None:
-            sim.result_times.append(float(current_time))
-
-
-def log_progress(
-    current_time: float,
-    end_time: float,
-    completed_steps: int,
-    suffix: str = "",
-    interval: int = 1000,
-) -> None:
-    """Print progress after the first step and then every ``interval`` steps."""
-    if completed_steps == 1 or completed_steps % interval == 0:
-        extra = f", {suffix}" if suffix else ""
-        _logger.info(f"  t = {current_time:.2f}/{end_time:.2f} days, step={completed_steps}{extra}")
 
 
 def build_standard_state(sim) -> StandardCouplingState:
@@ -490,6 +490,9 @@ def build_standard_state(sim) -> StandardCouplingState:
     return StandardCouplingState(
         concentration_variables=concentration_variables,
         species_slices=species_slices,
+        nonnegative_slices=build_nonnegative_slices(
+            sim.components, species_slices, sim.signed_components
+        ),
         water_sink_sources=water_sink_sources,
         transported=transported,
         reacted=reacted,

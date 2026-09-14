@@ -140,7 +140,7 @@ def build_model(
         )
         transport_ims = flopy.mf6.ModflowIms(
             simulation,
-            print_option="SUMMARY",
+            print_option="NONE",
             outer_dvclose=hclose,
             outer_maximum=nouter,
             under_relaxation="NONE",
@@ -169,7 +169,6 @@ def build_model(
             gwt,
             budget_filerecord=f"{gwt_name}.cbc",
             concentration_filerecord=f"{gwt_name}.ucn",
-            budgetcsv_filerecord=f"{gwt_name}.oc.csv",
             saverecord=[("CONCENTRATION", "LAST"), ("BUDGET", "LAST")],
         )
         flopy.mf6.ModflowGwfgwt(

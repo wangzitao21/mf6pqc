@@ -151,7 +151,6 @@ class StrangOrderingTests(unittest.TestCase):
                 side_effect=synchronize,
             ),
             patch("mf6pqc.coupling.strang.save_time_step_results"),
-            patch("mf6pqc.coupling.strang.log_progress"),
         ):
             strang_time_step(sim, state)
 

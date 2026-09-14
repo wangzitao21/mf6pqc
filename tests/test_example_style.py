@@ -31,14 +31,15 @@ class ExampleLayoutTests(unittest.TestCase):
         for name in check_examples.REQUIRED_FILES:
             (self.case / name).write_text("", encoding="utf-8")
 
-    def test_shared_files_and_support_modules_do_not_require_runtime_directories(self):
-        (self.examples / "README.md").write_text("Case conventions", encoding="utf-8")
-        (self.examples / "__pycache__").mkdir()
-        for name in ("config.py", "comparison.py", "chemistry.py", "simulation.py", "analysis.py"):
-            (self.case / name).write_text("", encoding="utf-8")
+    def test_case_has_three_source_files_and_three_directory_names(self):
+        self.assertEqual(
+            check_examples.ALLOWED_ENTRIES,
+            {"run.py", "modflow_model.py", "plot.ipynb", "input_data", "output", "simulation"},
+        )
         self.assertEqual(check_examples.discover_cases(self.examples), [self.case])
-        self.assertFalse((self.case / "output").exists())
-        self.assertFalse((self.case / "simulation").exists())
+        for name in ("output", "simulation"):
+            (self.case / name).mkdir()
+        self.assertEqual(check_examples.discover_cases(self.examples), [self.case])
 
     def test_unexpected_source_and_invalid_runtime_entry_are_rejected(self):
         unexpected = self.case / "old_run.py"
@@ -49,6 +50,17 @@ class ExampleLayoutTests(unittest.TestCase):
         (self.case / "output").touch()
         with self.assertRaisesRegex(AssertionError, "must be a directory"):
             check_examples.discover_cases(self.examples)
+
+    def test_extra_case_files_and_directories_are_rejected(self):
+        for name in ("config.py", "analysis.py", "output_original_20260913_174349", "__pycache__"):
+            extra = self.case / name
+            extra.touch()
+            with (
+                self.subTest(name=name),
+                self.assertRaisesRegex(AssertionError, "unexpected entries"),
+            ):
+                check_examples.discover_cases(self.examples)
+            extra.unlink()
 
     def test_native_catalogue_refers_to_current_source_directories(self):
         self.assertEqual(len(check_examples.PHT3D_SMOKE_CASES), 10)
@@ -71,19 +83,103 @@ class ExampleLayoutTests(unittest.TestCase):
                 check_examples.check_native(names, self.examples / "unused", 1)
         self.assertFalse((self.examples / "unused").exists())
 
+    def test_successful_process_without_results_is_not_accepted(self):
+        with self.assertRaisesRegex(AssertionError, "No completed result"):
+            check_examples.validate_native_results(self.case)
+
     def test_native_selection_runs_only_named_cases_with_relocated_outputs(self):
         selected = check_examples.PHT3D_SMOKE_CASES[0]
         output = self.examples / "native"
-        with patch.object(
-            check_examples.subprocess, "run", return_value=SimpleNamespace(returncode=0)
-        ) as run:
+        with (
+            patch.object(
+                check_examples.subprocess, "run", return_value=SimpleNamespace(returncode=0)
+            ) as run,
+            patch.object(
+                check_examples, "validate_native_results", return_value={"result_sets": 1}
+            ) as validate,
+        ):
             reports = check_examples.check_native([selected], output, 10)
+        validate.assert_called_once_with(output / selected)
         run.assert_called_once()
         self.assertEqual(
             run.call_args.args[0][1], str(check_examples.EXAMPLES / selected / "run.py")
         )
         self.assertEqual(run.call_args.kwargs["env"]["MF6PQC_RUN_ROOT"], str(output))
         self.assertEqual([report["case"] for report in reports], [selected])
+
+
+class NativeResultValidationTests(unittest.TestCase):
+    def setUp(self):
+        import numpy as np
+
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.case = Path(self.temporary.name)
+        self.output = self.case / "output"
+        self.output.mkdir()
+        self.manifest = {
+            "run": {"completed": True, "nxyz": 3},
+            "result_shape": [2, 2, 3],
+            "files": ["results.npy", "results_times.npy", "results_headings.txt"],
+        }
+        self.write_manifest()
+        np.save(self.output / "results.npy", np.ones((2, 2, 3)))
+        np.save(self.output / "results_times.npy", [0.0, 1.0])
+        (self.output / "results_headings.txt").write_text("A\nB\n", encoding="utf-8")
+
+    def write_manifest(self):
+        (self.output / "results_manifest.json").write_text(
+            json.dumps(self.manifest), encoding="utf-8"
+        )
+
+    def test_valid_result_set(self):
+        self.assertEqual(
+            check_examples.validate_native_results(self.case),
+            {"result_sets": 1, "arrays_checked": 2},
+        )
+
+    def test_incomplete_or_nonconvergent_run_is_rejected(self):
+        for run in (
+            {"completed": False},
+            {"completed": True, "modflow_convergence_failures": [1]},
+            {"completed": True, "sia_convergence_failures": [1]},
+        ):
+            with self.subTest(run=run):
+                self.manifest["run"] = run
+                self.write_manifest()
+                with self.assertRaises(AssertionError):
+                    check_examples.validate_native_results(self.case)
+
+    def test_missing_and_corrupt_saved_arrays_are_rejected(self):
+        import numpy as np
+
+        np.save(self.output / "results.npy", np.full((2, 2, 3), np.nan))
+        with self.assertRaisesRegex(AssertionError, "Non-finite"):
+            check_examples.validate_native_results(self.case)
+        np.save(self.output / "results.npy", np.ones((2, 3, 2)))
+        with self.assertRaisesRegex(AssertionError, "shape"):
+            check_examples.validate_native_results(self.case)
+        (self.output / "results.npy").unlink()
+        with self.assertRaisesRegex(AssertionError, "Missing output"):
+            check_examples.validate_native_results(self.case)
+
+    def test_invalid_times_and_physical_properties_are_rejected(self):
+        import numpy as np
+
+        for times in ([0.0, 0.0], [1.0, 0.0], [0.0, np.nan]):
+            np.save(self.output / "results_times.npy", times)
+            with self.subTest(times=times), self.assertRaises(AssertionError):
+                check_examples.validate_native_results(self.case)
+        np.save(self.output / "results_times.npy", [0.0, 1.0])
+        for name, values in (
+            ("results_porosity.npy", [0.0, 0.3]),
+            ("results_porosity.npy", [1.1, 0.3]),
+            ("results_K.npy", [-1.0, 1.0]),
+        ):
+            np.save(self.output / name, values)
+            with self.subTest(name=name, values=values), self.assertRaises(AssertionError):
+                check_examples.validate_native_results(self.case)
+            (self.output / name).unlink()
 
 
 @unittest.skipUnless(HAS_EXAMPLE_DEPENDENCIES, "Requires the optional example dependencies")
@@ -97,6 +193,7 @@ class ExampleImportTests(unittest.TestCase):
     def test_native_creation_flopy_runs_and_child_processes_are_blocked(self):
         sources = (
             "from mf6pqc.backends import NativeBackendFactory\nNativeBackendFactory().create_phreeqcrm(1, 1)",
+            "from mf6pqc import ProcessBackendFactory\nProcessBackendFactory().create_phreeqcrm(1, 1)",
             "from mf6pqc.backends import NativeBackendFactory\nNativeBackendFactory().create_modflow_api('missing', '.')",
             "import phreeqcrm\nphreeqcrm.PhreeqcRM(1, 1)",
             "import modflowapi\nmodflowapi.ModflowApi('missing')",

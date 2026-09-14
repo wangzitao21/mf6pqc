@@ -1,5 +1,4 @@
 TITLE Halite-saturated injection into a mixed evaporite assemblage
-# Conditioning solutions are external reservoirs; their solids are not in the domain.
 SOLUTION 90
     temp 25
     pH 6.818060
@@ -36,7 +35,6 @@ EQUILIBRIUM_PHASES 91
     Halite 0 10
 SAVE solution 1
 END
-# Finite in-domain inventory, mol per litre of representative BULK volume.
 EQUILIBRIUM_PHASES 1
     Halite 0 14.760147601476
     Carnallite 0 0.92112838226828

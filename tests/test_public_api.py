@@ -21,6 +21,7 @@ from mf6pqc.exceptions import ConfigurationError
 from mf6pqc.input_processing import create_ic_array_from_map, setup_mixed_ic
 from mf6pqc.output_processing import save_results
 from mf6pqc.permeability import FluidAdjustedKozenyCarmanUpdater
+from mf6pqc.runtime import RunStatus
 
 
 class FakeChemistry:
@@ -104,6 +105,8 @@ class PublicApiTests(unittest.TestCase):
 
     def test_reaction_schedule_rejects_unsupported_coupling_methods(self) -> None:
         simulator = object.__new__(mf6pqc)
+        simulator.lifecycle = RunStatus()
+        simulator.config = SimulationConfig("test", 1, BackendPaths(None, None, None, None, None))
         simulator._run_active = False
         simulator._run_completed = False
         simulator.reaction_steps = frozenset({1})

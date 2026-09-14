@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mf6pqc"
 dynamic = ["version"]
-description = "Reactive-transport coupling between MODFLOW 6 and PhreeqcRM"
+description = "A modular MODFLOW 6–PhreeqcRM framework for variable-density reactive transport with evolving porosity and hydraulic conductivity"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-only"
@@ -32,7 +32,7 @@ classifiers = [
 dependencies = [
   "numpy>=1.26,<3",
   "modflowapi>=1.0.1,<2",
-  "phreeqcrm>=0.0.18,<0.1",
+  "phreeqcrm==0.0.17",
 ]
 
 [project.optional-dependencies]

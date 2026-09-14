@@ -245,7 +245,7 @@ def capture_flow_response(sim) -> None:
     ).copy()
 
 
-def synchronize_temperature_to_chemistry(sim) -> np.ndarray:
+def synchronize_temperature_to_chemistry(sim, *, write: bool = True) -> np.ndarray:
     """Copy the latest GWE temperature into PhreeqcRM before ``RunCells``."""
     if not sim.energy_enabled:
         return sim.temperature
@@ -256,7 +256,7 @@ def synchronize_temperature_to_chemistry(sim) -> np.ndarray:
         binding.temperature_ptr, "GWE temperature for chemistry"
     ).copy()
     sim.temperature = temperature
-    if sim.sync_gwe_temperature_to_phreeqc:
+    if write and sim.sync_gwe_temperature_to_phreeqc:
         sim.phreeqc_rm.SetTemperature(temperature)
     return temperature
 
@@ -278,19 +278,19 @@ def update_energy_porosity(sim, porosity: np.ndarray) -> None:
 
 def save_energy_time_step_results(sim, logical_step: int) -> None:
     """Store thermal and VSC fields on the same schedule as chemistry output."""
-    from mf6pqc.coupling.common import should_save_time_step
+    from mf6pqc.results import append_frame, should_save_time_step
 
     if not should_save_time_step(sim, logical_step):
         return
     binding = sim.energy_binding
-    sim.results_temperature.append(
-        _validate_temperature(binding.temperature_ptr, "GWE temperature").copy()
+    append_frame(
+        sim.results_temperature, _validate_temperature(binding.temperature_ptr, "GWE temperature")
     )
-    sim.results_temperature_for_flow.append(binding.temperature_for_flow.copy())
+    append_frame(sim.results_temperature_for_flow, binding.temperature_for_flow)
     if sim.vsc_enabled:
-        sim.results_viscosity.append(binding.viscosity_for_flow.copy())
-        sim.results_reference_K.append(binding.reference_k11_for_flow.copy())
-        sim.results_effective_K.append(binding.effective_k11_for_flow.copy())
+        append_frame(sim.results_viscosity, binding.viscosity_for_flow)
+        append_frame(sim.results_reference_K, binding.reference_k11_for_flow)
+        append_frame(sim.results_effective_K, binding.effective_k11_for_flow)
 
 
 def finalize_energy_results(sim) -> None:
