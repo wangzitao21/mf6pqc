@@ -1,63 +1,67 @@
+# MIN3P 'free' means TOTAL component concentration (manual Block 14).
+# Fixed pH is not adjusted for charge balance; initial B3/B4 Na is.
+KNOBS
+    -convergence_tolerance 1e-12
+    -iterations 300
+END
 SOLUTION 0
-    units       mol/L
-    pH          9.33 charge
-    Ca          1.70e-4
-    C(4)        2.70e-4
-    S(6)        1.70e-4
-    Na          3.20e-4
+    units mol/kgw
+    temp 25
+    pH 9.33d0
+    Ca 0.000169512
+    C(4) 0.0002695
+    S(6) 0.000169512
+    Na 0.00032
 END
 SOLUTION 1
-    pH          3.0 charge
-    units       mol/L
-    Ca          1e-4
-    C(4)        1e-2
-    S(6)        0.20
-    Na          3.96e-1
+    units mol/kgw
+    temp 25
+    pH 3.0d0
+    Ca 0.0001
+    C(4) 0.01
+    S(6) 0.2
+    Na 0.39562
 END
 KINETICS 1
 Calcite
-	-m0     8.13
-	-parms  5e-8
+    -m0 8.1227382719848453
+    -tol 1e-10
+    -parms 4.9999999999999998e-08 2.7075794239949488e-09
 Gypsum
-	-m0     0.00
-	-parms  5e-8
+    -m0 1.3474881543013333e-09
+    -tol 1e-10
+    -parms 4.9999999999999998e-08 1.3474881543013333e-09
+    -cvode true
+    -cvode_steps 1000
+    -bad_step_max 1000
 END
-RATES 1
+RATES
 Calcite
-	-start
-	10 k0 = PARM(1)
-	30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
-	80 moles = k_t * (1 - SR("Calcite")) * TIME
-	110 SAVE moles
-	-end
+    -start
+10 k = PARM(1)
+20 IF M > 0 THEN k = k * (M/M0)^(2/3) ELSE k = 0
+30 moles = k * (1 - SR("Calcite")) * TIME
+40 IF moles > 0 AND moles > M-PARM(2) THEN moles = M-PARM(2)
+50 SAVE moles
+    -end
 Gypsum
-	-start
-	10 k0 = PARM(1)
-	30 k_t = k0
-	80 moles = k_t * (1 - SR("Gypsum")) * TIME
-	110 SAVE moles
-	-end
+    -start
+10 k = PARM(1)
+30 moles = k * (1 - SR("Gypsum")) * TIME
+40 IF moles > 0 AND moles > M-PARM(2) THEN moles = M-PARM(2)
+50 SAVE moles
+    -end
 END
 USER_PUNCH 1
-    -headings Calcite d_Calcite Gypsum d_Gypsum
+    -headings Calcite d_Calcite SR_Calcite SI_Calcite Gypsum d_Gypsum SR_Gypsum SI_Gypsum
     -start
-    10 PUNCH KIN("Calcite")
-    20 PUNCH KIN_DELTA("Calcite")
-    30 PUNCH KIN("Gypsum")
-    40 PUNCH KIN_DELTA("Gypsum")
+10 PUNCH KIN("Calcite"), KIN_DELTA("Calcite"), SR("Calcite"), SI("Calcite")
+20 PUNCH KIN("Gypsum"), KIN_DELTA("Gypsum"), SR("Gypsum"), SI("Gypsum")
+    -end
 END
 SELECTED_OUTPUT 1
-    -step false
-    -high_precision false
-    -water false
-    soln false
-    pH false
-    sim false
-    state false
-    time false
-    pe false
-    distance false
-END
+    -reset false
+    -high_precision true
 PRINT
     -warnings 0
 END

@@ -83,6 +83,7 @@ class ChemistryState:
     d_mineral_names: np.ndarray | None = None
     density_row: int = -1
     input_provenance: dict = field(default_factory=dict)
+    initial_condition_modules: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -130,6 +131,7 @@ class RunStatus:
     sia_iterations: list = field(default_factory=list)
     sia_convergence_failures: list = field(default_factory=list)
     sia_diagnostics: list = field(default_factory=list)
+    implicit_diagnostics: dict = field(default_factory=dict)
     porosity_clipping: dict = field(default_factory=dict)
 
 

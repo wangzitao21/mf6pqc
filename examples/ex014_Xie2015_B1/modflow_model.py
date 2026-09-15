@@ -63,6 +63,9 @@ def build_model(
     simulation = flopy.mf6.MFSimulation(
         sim_name="model", sim_ws=str(workspace), exe_name=mf6_executable, verbosity_level=0
     )
+
+    simulation.simulation_data.float_precision = 16
+    simulation.simulation_data.float_characters = 24
     flopy.mf6.ModflowTdis(
         simulation, pname="tdis", time_units="DAYS", nper=nper, perioddata=period_data
     )
@@ -71,13 +74,13 @@ def build_model(
         simulation,
         pname="ims",
         complexity="SIMPLE",
-        outer_dvclose=1e-08,
+        outer_dvclose=1e-10,
         outer_maximum=50,
         under_relaxation="NONE",
         inner_maximum=500,
-        inner_dvclose=1e-09,
-        rcloserecord=1e-08,
-        linear_acceleration="BICGSTAB",
+        inner_dvclose=1e-10,
+        rcloserecord=1e-10,
+        linear_acceleration="CG",
         scaling_method="DIAGONAL",
         reordering_method="RCM",
         relaxation_factor=0.97,
@@ -104,12 +107,14 @@ def build_model(
     )
     flopy.mf6.ModflowGwfic(gwf, pname="ic", strt=initial_head)
     flopy.mf6.ModflowGwfsto(gwf, pname="sto", save_flows=False, iconvert=1, ss=0.0, sy=0.0)
-    ghb_spd = [[(0, 0, ncol - 1), outlet_head, right_conductance]]
+
+    ghb_spd = [[(0, 0, ncol - 1), outlet_head, right_conductance, 1.0]]
     flopy.mf6.ModflowGwfghb(
         gwf,
         pname="ghb_right",
         save_flows=True,
         maxbound=len(ghb_spd),
+        auxiliary=["CHARGE_OUT_LIMIT"],
         stress_period_data={0: ghb_spd},
         filename=f"{gwf_name}.choushui.ghb",
     )
@@ -128,7 +133,7 @@ def build_model(
         pname="oc",
         budget_filerecord=f"{gwf_name}.bud",
         head_filerecord=f"{gwf_name}.hds",
-        saverecord=[("HEAD", "ALL"), ("BUDGET", "LAST")],
+        saverecord=[("HEAD", "ALL"), ("BUDGET", "ALL")],
     )
     src_data_list = [
         ((layer, row, column), 0.0)
@@ -138,7 +143,7 @@ def build_model(
     ]
     src_maxbound = len(src_data_list)
     nouter, ninner = (50, 100)
-    hclose, rclose, relax = (1e-06, 1e-06, 1.0)
+    hclose, rclose, relax = (1e-12, 1e-12, 1.0)
 
     for species_name, concentration in initial_fields.items():
         gwt_name = get_gwt_model_name(species_name)
@@ -163,7 +168,8 @@ def build_model(
         simulation.register_ims_package(transport_ims, [gwt.name])
         flopy.mf6.ModflowGwtdis(gwt, idomain=1, filename=f"{gwt_name}.dis", **discretization)
         flopy.mf6.ModflowGwtic(gwt, strt=concentration, filename=f"{gwt_name}.ic")
-        flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwt_name}.adv")
+
+        flopy.mf6.ModflowGwtadv(gwt, scheme="UPSTREAM", filename=f"{gwt_name}.adv")
         flopy.mf6.ModflowGwtdsp(
             gwt, xt3d_off=True, alh=alh, ath1=ath1, diffc=diffc, filename=f"{gwt_name}.dsp"
         )
@@ -177,6 +183,8 @@ def build_model(
             filename=f"{gwt_name}.src",
         )
         sourcerecarray = [("bushui", "AUX", species_name)]
+        if species_name.casefold() == "charge":
+            sourcerecarray.append(("ghb_right", "AUXMIXED", "CHARGE_OUT_LIMIT"))
         flopy.mf6.ModflowGwtssm(
             gwt, pname=f"{species_name}_ssm", sources=sourcerecarray, filename=f"{gwt_name}.ssm"
         )

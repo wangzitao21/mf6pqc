@@ -10,6 +10,7 @@ import numpy as np
 from mf6pqc.backends import BackendFactory
 from mf6pqc.constants import SECONDS_PER_DAY, VM_MINERALS
 from mf6pqc.exceptions import ConfigurationError
+from mf6pqc.kinetics import ImplicitOptions
 from mf6pqc.permeability import (
     BasePermeabilityUpdater,
     FluidAdjustedKozenyCarmanUpdater,
@@ -134,6 +135,7 @@ class SimulationConfig:
     # Appended after the original fields to preserve positional compatibility.
     energy: EnergyOptions = field(default_factory=EnergyOptions)
     reaction_steps: list[int] | None = None
+    implicit: ImplicitOptions = field(default_factory=ImplicitOptions)
 
     @classmethod
     def from_legacy(cls, values):
@@ -162,6 +164,7 @@ class SimulationConfig:
                 for name in ("paths", "fields", "chemistry", "feedback", "sia", "output", "energy")
             },
         )
+        config.implicit = (config.implicit or ImplicitOptions()).validated()
         if not isinstance(config.case_name, str) or not config.case_name.strip():
             raise ConfigurationError("case_name must be a non-empty string")
         if any(
@@ -272,6 +275,7 @@ class SimulationConfig:
 
 
 LEGACY_FIELDS = {
+    "implicit_options": "implicit",
     "case_name": "case_name",
     "nxyz": "nxyz",
     "nthreads": "nthreads",

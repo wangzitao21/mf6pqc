@@ -13,6 +13,7 @@ from mf6pqc.config import (
 )
 from mf6pqc.coupling import CouplingMethod
 from mf6pqc.coupling.state import CouplingHooks
+from mf6pqc.kinetics import ImplicitOptions, KineticReaction, KineticState
 from mf6pqc.mf6pqc import MF6PQC, mf6pqc
 from mf6pqc.parallel import ProcessBackendFactory
 from mf6pqc.types import ArrayLike
@@ -28,6 +29,9 @@ __all__ = [
     "EnergyOptions",
     "FeedbackOptions",
     "MF6PQC",
+    "ImplicitOptions",
+    "KineticReaction",
+    "KineticState",
     "OutputOptions",
     "ProcessBackendFactory",
     "SIAOptions",

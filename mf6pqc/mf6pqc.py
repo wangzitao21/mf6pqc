@@ -24,6 +24,7 @@ from mf6pqc.input_processing import (
     setup_mixed_ic,
     setup_single_ic,
 )
+from mf6pqc.kinetics import ImplicitOptions
 from mf6pqc.output_processing import (
     environment_metadata,
     save_results,
@@ -110,6 +111,7 @@ class mf6pqc:
         *,
         result_storage: str = "memory",
         fail_on_porosity_clipping: bool = False,
+        implicit_options: ImplicitOptions | None = None,
     ):
         """
         Initialize a coupled MODFLOW 6 and PhreeqcRM simulator.
@@ -226,6 +228,10 @@ class mf6pqc:
                         "Porosity feedback is enabled, but selected output contains no "
                         "d_<mineral> headings"
                     )
+            self.initial_condition_modules = tuple(sorted({
+                name for mapping in (ic_map, ic_map2 or {})
+                for name, value in mapping.items() if np.any(np.asarray(value) >= 0)
+            }))
             self.initial_concentrations = initial.copy()
             self.results.append(self.selected_output.copy())
             self.result_times.append(0.0)
@@ -380,6 +386,7 @@ class mf6pqc:
                 "sia_iterations": self.sia_iterations,
                 "sia_convergence_failures": self.sia_convergence_failures,
                 "sia_diagnostics": self.sia_diagnostics,
+                "implicit_diagnostics": self.implicit_diagnostics,
                 "porosity_clipping": self.porosity_clipping,
                 "converged": self._run_completed
                 and not (self.modflow_convergence_failures or self.sia_convergence_failures),

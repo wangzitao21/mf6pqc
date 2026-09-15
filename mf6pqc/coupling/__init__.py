@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import Enum
 
+from mf6pqc.coupling.implicit import run_implicit
 from mf6pqc.coupling.sia import run_sia
 from mf6pqc.coupling.snia import run_standard
 from mf6pqc.coupling.strang import run_strang
@@ -16,6 +17,7 @@ class CouplingMethod(str, Enum):
 
     SNIA = "SNIA"
     SIA = "SIA"
+    IMPLICIT = "Implicit"
     STRANG = "Strang"
     THERMAL_SNIA = "ThermalSNIA"
 
@@ -23,6 +25,7 @@ class CouplingMethod(str, Enum):
 _RUNNERS: dict[CouplingMethod, Callable] = {
     CouplingMethod.SNIA: run_standard,
     CouplingMethod.SIA: run_sia,
+    CouplingMethod.IMPLICIT: run_implicit,
     CouplingMethod.STRANG: run_strang,
     CouplingMethod.THERMAL_SNIA: run_thermal_snia,
 }
@@ -37,6 +40,7 @@ def get_coupling_runner(method: CouplingMethod | str) -> tuple[CouplingMethod, C
             "snia": CouplingMethod.SNIA,
             "standard": CouplingMethod.SNIA,
             "sia": CouplingMethod.SIA,
+            "implicit": CouplingMethod.IMPLICIT,
             "strang": CouplingMethod.STRANG,
             "strang_splitting": CouplingMethod.STRANG,
             "thermal": CouplingMethod.THERMAL_SNIA,
@@ -59,6 +63,7 @@ __all__ = [
     "get_coupling_runner",
     "run_standard",
     "run_sia",
+    "run_implicit",
     "run_strang",
     "run_thermal_snia",
 ]
