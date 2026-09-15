@@ -36,21 +36,7 @@ def step_numbers(name: str, values) -> frozenset[int] | None:
 
 
 def ensure_array(nxyz: int, name: str, value: ArrayLike) -> np.ndarray:
-    """
-    Convert scalar or array-like input to a 1D array with length nxyz.
-    Parameters
-    ----------
-    nxyz : int
-        Number of computational cells.
-    name : str
-        Parameter name for error messages.
-    value : ArrayLike
-        Scalar or array input representing a cell-wise property.
-    Returns
-    -------
-    np.ndarray
-        Flattened array of length nxyz representing a physical field.
-    """
+    """Convert scalar or array-like input to a 1D array with length nxyz."""
     if isinstance(nxyz, bool) or not isinstance(nxyz, numbers.Integral) or nxyz <= 0:
         raise ValueError("nxyz must be a positive integer")
     if isinstance(value, numbers.Number):
@@ -66,19 +52,7 @@ def ensure_array(nxyz: int, name: str, value: ArrayLike) -> np.ndarray:
 
 
 def get_species_slice(nxyz: int, ispecies: int) -> slice:
-    """
-    Get the slice for a species in a flattened concentration vector.
-    Parameters
-    ----------
-    nxyz : int
-        Number of computational cells.
-    ispecies : int
-        Index of the species in the component list.
-    Returns
-    -------
-    slice
-        Slice that targets the species block in a 1D vector.
-    """
+    """Get the slice for a species in a flattened concentration vector."""
     if nxyz <= 0:
         raise ValueError("nxyz must be positive")
     if isinstance(ispecies, bool) or not isinstance(ispecies, numbers.Integral):

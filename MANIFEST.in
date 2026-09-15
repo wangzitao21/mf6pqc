@@ -4,7 +4,7 @@ prune docs
 exclude CONTRIBUTING.md CHANGELOG.md CITATION.cff
 recursive-include tests *.py
 recursive-include scripts *.py
-recursive-include examples *.py *.ipynb *.pqi *.dat *.npz *.npy *.csv *.txt *.md
+recursive-include examples *.py *.ipynb *.pqi *.dat *.npz *.npy *.csv *.txt *.md *.json
 prune examples/*/output
 prune examples/*/simulation
 prune examples/*/__pycache__

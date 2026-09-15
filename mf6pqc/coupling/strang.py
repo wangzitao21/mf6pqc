@@ -10,6 +10,7 @@ import numpy as np
 from mf6pqc.backends import initialize_modflow6
 from mf6pqc.constants import MIN_TIME_STEP
 from mf6pqc.coupling.common import (
+    StandardCouplingState,
     advance_to_end,
     build_standard_state,
     cache_basic_geometry,
@@ -25,7 +26,6 @@ from mf6pqc.coupling.common import (
     update_selected_output,
     validate_setup,
 )
-from mf6pqc.coupling.state import StandardCouplingState
 from mf6pqc.exceptions import CouplingError
 from mf6pqc.feedback import update_medium_properties, write_conductivity_for_step
 

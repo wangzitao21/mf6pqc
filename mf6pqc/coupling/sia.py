@@ -10,6 +10,7 @@ import numpy as np
 from mf6pqc.backends import initialize_modflow6, solve_prepared_modflow
 from mf6pqc.constants import MIN_TIME_STEP
 from mf6pqc.coupling.common import (
+    SIACouplingState,
     _record_solver_failure,
     advance_to_end,
     allocate_concentration_buffers,
@@ -32,7 +33,6 @@ from mf6pqc.coupling.common import (
     validate_setup,
     write_concentrations_to_modflow,
 )
-from mf6pqc.coupling.state import SIACouplingState
 from mf6pqc.exceptions import BackendError, ConvergenceError, CouplingError
 from mf6pqc.feedback import (
     prepare_feedback,
@@ -159,37 +159,21 @@ def solve_modflow_picard(sim, state: SIACouplingState) -> None:
 
 
 def build_reaction_input(state: SIACouplingState, dt: float) -> None:
-    """Reconstruct the reaction base state for one source Picard iterate.
-
-    The MODFLOW endpoint already contains the reaction source from the
-    previous Picard iterate.  Feeding that endpoint directly to a full
-    PhreeqcRM kinetic step applies the old reaction contribution a second
-    time.  Equation (110) of Steefel and MacQuarrie (1996) instead requires
-    the transport contribution with the old reaction term removed.  In GWT
-    SRC units this is ``C_base = C_transport - q_reaction * dt / V_water``.
-    """
+    """Remove the preceding Picard source: C_base = C_transport - q * dt / V_water."""
     if dt <= MIN_TIME_STEP:
         raise CouplingError(f"SIA received a non-positive reaction step: {dt}")
     if not np.all(np.isfinite(state.mobile_water_volume)) or np.any(
         state.mobile_water_volume <= 0.0
     ):
         raise CouplingError("SIA mobile-water volumes must be finite and positive")
-    np.copyto(state.reaction_input, state.transported)
-    for species_slice in state.species_slices:
-        correction = state.source_difference[species_slice]
-        np.copyto(correction, state.source_rates[species_slice])
-        correction *= dt
-        correction /= state.mobile_water_volume
-        state.reaction_input[species_slice] -= correction
+    np.multiply(state.source_rates, dt, out=state.source_difference)
+    correction = state.source_difference.reshape(-1, state.mobile_water_volume.size)
+    correction /= state.mobile_water_volume
+    np.subtract(state.transported, state.source_difference, out=state.reaction_input)
 
 
 def update_sources(sim, state: SIACouplingState, dt: float) -> None:
-    """Evaluate and relax the reaction-source fixed-point residual.
-
-    ``source_difference`` deliberately stores the *unrelaxed* residual.  A
-    small relaxation factor must not be able to manufacture convergence by
-    making the applied source update artificially small.
-    """
+    """Relax the source update while retaining the unrelaxed convergence residual."""
     relaxation = sim.sia_source_relaxation
     if dt <= MIN_TIME_STEP:
         state.source_rates.fill(0.0)
@@ -202,19 +186,10 @@ def update_sources(sim, state: SIACouplingState, dt: float) -> None:
         )
         apply_sia_sources(sim, state)
         return
-    for species_slice in state.species_slices:
-        calculated = state.candidate_source_rates[species_slice]
-        np.subtract(
-            state.reacted[species_slice],
-            state.reaction_input[species_slice],
-            out=calculated,
-        )
-        calculated *= state.mobile_water_volume / dt
-        np.subtract(
-            calculated,
-            state.source_rates[species_slice],
-            out=state.source_difference[species_slice],
-        )
+    np.subtract(state.reacted, state.reaction_input, out=state.candidate_source_rates)
+    calculated = state.candidate_source_rates.reshape(-1, state.mobile_water_volume.size)
+    calculated *= state.mobile_water_volume / dt
+    np.subtract(state.candidate_source_rates, state.source_rates, out=state.source_difference)
     np.subtract(
         state.reacted,
         state.transported,
@@ -227,19 +202,10 @@ def update_sources(sim, state: SIACouplingState, dt: float) -> None:
 def update_sources_from_instantaneous_rates(
     sim, state: SIACouplingState, target_time: float
 ) -> None:
-    """Evaluate a paper-style instantaneous reaction source at ``n + 1``.
+    """Evaluate rate(components, C, time) -> dC/dt at the transport endpoint.
 
-    Steefel and MacQuarrie's equation (108) places ``R^(n+1,m)`` directly on
-    the transport right-hand side.  A full PhreeqcRM reaction map instead
-    returns the reaction integrated over an entire coupling interval.  The
-    two are different for finite kinetic time steps.  This optional callback
-    path is intended for stateless rate-law verification problems where the
-    component rate is available explicitly.
-
-    The callback contract is ``rate(components, C, time) -> dC/dt``.  ``C``
-    is a read-only array shaped ``(n_components, n_cells)`` and the returned
-    rates must have the same shape and use model-time units.
-    """
+    C is a read-only (component, cell) array; rates use model-time units.
+    The callback must be stateless and return instantaneous, not integrated, rates."""
     evaluator = sim.sia_rate_evaluator
     concentrations = state.transported.reshape(sim.ncomps, sim.nxyz).copy()
     concentrations.setflags(write=False)
@@ -257,7 +223,7 @@ def update_sources_from_instantaneous_rates(
         raise CouplingError("sia_rate_evaluator returned non-finite rates")
 
     candidate = state.candidate_source_rates.reshape(expected_shape)
-    candidate[:] = rates * state.mobile_water_volume[np.newaxis, :]
+    np.multiply(rates, state.mobile_water_volume, out=candidate)
     np.subtract(
         state.candidate_source_rates,
         state.source_rates,
@@ -301,21 +267,10 @@ def check_picard_convergence(sim, state: SIACouplingState) -> bool:
             return False
 
     absolute_rate_tolerance = sim.sia_atol * state.mobile_water_volume / state.current_dt
-    return all(
-        np.all(
-            np.abs(state.source_difference[species_slice])
-            <= absolute_rate_tolerance
-            + sim.sia_rtol
-            * np.maximum(
-                np.abs(state.candidate_source_rates[species_slice]),
-                np.abs(
-                    state.candidate_source_rates[species_slice]
-                    - state.source_difference[species_slice]
-                ),
-            )
-        )
-        for species_slice in state.species_slices
-    )
+    difference = state.source_difference.reshape(-1, state.mobile_water_volume.size)
+    candidate = state.candidate_source_rates.reshape(difference.shape)
+    scale = np.maximum(np.abs(candidate), np.abs(candidate - difference))
+    return bool(np.all(np.abs(difference) <= absolute_rate_tolerance + sim.sia_rtol * scale))
 
 
 def picard_residual_summary(state: SIACouplingState) -> dict[str, float]:

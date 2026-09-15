@@ -7,6 +7,7 @@ import time
 
 from mf6pqc.backends import initialize_modflow6
 from mf6pqc.coupling.common import (
+    StandardCouplingState,
     advance_to_end,
     build_standard_state,
     cache_basic_geometry,
@@ -22,7 +23,6 @@ from mf6pqc.coupling.common import (
     update_selected_output,
     validate_setup,
 )
-from mf6pqc.coupling.state import StandardCouplingState
 from mf6pqc.energy import (
     capture_flow_inputs,
     capture_flow_response,

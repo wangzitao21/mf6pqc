@@ -139,7 +139,7 @@ def bind_aliases(cls, paths):
     for name, path in paths.items():
         owner, attribute = path.rsplit(".", 1)
 
-        def setter(self, value, owner=owner, attribute=attribute):
-            setattr(attrgetter(owner)(self), attribute, value)
+        def setter(self, value, owner=attrgetter(owner), attribute=attribute):
+            setattr(owner(self), attribute, value)
 
         setattr(cls, name, property(attrgetter(path), setter))

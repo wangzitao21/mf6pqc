@@ -25,37 +25,30 @@ from mf6pqc.properties import (
 _logger = logging.getLogger(__name__)
 
 
-def _atomic_save(path: Path, values: Any) -> None:
-    """Write one NumPy array atomically within its destination directory."""
-    descriptor, temporary_name = tempfile.mkstemp(
+@contextlib.contextmanager
+def _atomic_file(path: Path, *, text: bool = False):
+    descriptor, temporary = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
     )
     try:
-        with os.fdopen(descriptor, "wb") as handle:
-            np.save(handle, np.asarray(values))
+        options = {"encoding": "utf-8", "newline": "\n"} if text else {}
+        with os.fdopen(descriptor, "w" if text else "wb", **options) as handle:
+            yield handle
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary_name, path)
-    except Exception:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(temporary_name)
-        raise
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def _atomic_save(path: Path, values: Any) -> None:
+    with _atomic_file(path) as handle:
+        np.save(handle, np.asarray(values))
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_name, path)
-    except Exception:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(temporary_name)
-        raise
+    with _atomic_file(path, text=True) as handle:
+        handle.write(text)
 
 
 def environment_metadata() -> dict[str, Any]:
@@ -206,32 +199,19 @@ def save_results(
     _logger.info(f"Headings saved to: {headings_path}")
 
     saved_files = [result_path.name, headings_path.name]
+    arrays = {}
     if times is not None:
-        times_path = Path(f"{base}_times.npy")
-        _atomic_save(times_path, times)
-        saved_files.append(times_path.name)
-
+        arrays["times"] = times
     if if_update_porosity_k:
-        porosity_path = Path(f"{base}_porosity.npy")
-        conductivity_path = Path(f"{base}_K.npy")
-        _atomic_save(porosity_path, porosity_values)
-        _atomic_save(conductivity_path, conductivity_values)
-        saved_files.extend([porosity_path.name, conductivity_path.name])
-        _logger.info(f"Porosity results saved to: {porosity_path}")
-        _logger.info(f"K results saved to: {conductivity_path}")
+        arrays.update(porosity=porosity_values, K=conductivity_values)
     if if_update_diffc:
-        diffusion_path = Path(f"{base}_diffc.npy")
-        _atomic_save(diffusion_path, diffusion_values)
-        saved_files.append(diffusion_path.name)
-        _logger.info(f"DIFFC results saved to: {diffusion_path}")
-    energy_files: dict[str, str] = {}
-    for name, field in thermal_values.items():
-        energy_path = Path(f"{base}_{name}.npy")
-        _atomic_save(energy_path, field)
-        saved_files.append(energy_path.name)
-        energy_files[name] = energy_path.name
-    if energy_files:
-        _logger.info(f"Thermal/VSC results saved to: {base}_*.npy")
+        arrays["diffc"] = diffusion_values
+    arrays.update(thermal_values)
+    for name, field in arrays.items():
+        path = Path(f"{base}_{name}.npy")
+        _atomic_save(path, field)
+        saved_files.append(path.name)
+    energy_files = {name: f"{base.name}_{name}.npy" for name in thermal_values}
 
     manifest = {
         "schema_version": 1,
@@ -261,7 +241,6 @@ def save_results(
         }
     if metadata:
         manifest["run"] = metadata
-    manifest_path = Path(f"{base}_manifest.json")
     _atomic_write_text(
         manifest_path,
         json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n",

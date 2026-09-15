@@ -8,7 +8,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from mf6pqc import ImplicitOptions, KineticReaction
-from mf6pqc.coupling.implicit_system import (
+from mf6pqc.coupling.implicit import (
     TransportResponse,
     _block_start,
     _coordinate_start,
@@ -272,7 +272,7 @@ class ImplicitSystemTests(unittest.TestCase):
         np.testing.assert_allclose(result[1], aqueous, atol=2e-9, rtol=0)
 
     def test_augmented_trace_concentrations_preserve_native_mass_equations(self):
-        from mf6pqc.coupling.implicit_augmented import solve_augmented
+        from mf6pqc.coupling.implicit import solve_augmented
 
         nu = np.array([[1.0, 1.0], [0.0, 1.0]])
         matrix = csr_matrix([[-0.3, 0.2], [0.2, -0.3]])

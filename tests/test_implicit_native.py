@@ -167,7 +167,7 @@ class NativeImplicitTests(unittest.TestCase):
     def test_cell_kernel_matches_main_without_solution_zero(self):
         from mf6pqc import ChemistryOptions
         from mf6pqc.coupling.common import update_selected_output
-        from mf6pqc.coupling.speciation_tangent import CellSpeciation
+        from mf6pqc.coupling.implicit import CellSpeciation
 
         case = ROOT / "examples/ex016_Xie2015_B3/input_data"
         with tempfile.TemporaryDirectory() as directory:

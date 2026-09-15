@@ -12,12 +12,19 @@ from mf6pqc import (
     MF6PQC,
     BackendPaths,
     CellFields,
+    CouplingHooks,
+    CouplingMethod,
     SimulationConfig,
 )
-from mf6pqc.backends import CheckedPhreeqcRM, NativeBackendFactory
-from mf6pqc.coupling.common import build_nonnegative_slices, enforce_component_domains
-from mf6pqc.exceptions import ConfigurationError, CouplingError, PropertyUpdateError
+from mf6pqc.backends import CheckedPhreeqcRM, NativeBackendFactory, validate_modflow_workspace
+from mf6pqc.coupling.common import (
+    build_nonnegative_slices,
+    enforce_component_domains,
+    update_selected_output,
+)
+from mf6pqc.exceptions import BackendError, ConfigurationError, CouplingError, PropertyUpdateError
 from mf6pqc.feedback import setup_boundary_conductance_updates, update_medium_properties
+from mf6pqc.input_processing import create_ic_array_from_map
 from mf6pqc.parallel import _ProcessPhreeqcRM
 from mf6pqc.properties import get_calculated_density
 from mf6pqc.results import FrameBuffer, ProgressReporter, ResultHistory, prepare_results
@@ -282,5 +289,155 @@ class NumericalBoundaryTests(unittest.TestCase):
                 np.testing.assert_array_equal(selected, snapshot)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class ConfigurationRegressionTests(unittest.TestCase):
+    def test_counts_and_step_schedules_never_truncate(self):
+        for field in (
+            "nxyz",
+            "nthreads",
+            "save_interval",
+            "progress_interval",
+            "sia_max_iterations",
+        ):
+            for value in (True, np.bool_(True), 1.5, np.nan, np.inf, 0, "2"):
+                with self.subTest(field=field, value=value), self.assertRaises(ConfigurationError):
+                    MF6PQC(**{field: value})
+        for field in ("save_steps", "reaction_steps"):
+            for value in ([1.5], [True], [np.nan], [0], [], "12"):
+                with self.subTest(field=field, value=value), self.assertRaises(ConfigurationError):
+                    MF6PQC(**{field: value})
+
+    def test_tolerances_and_masks(self):
+        for options in ({"sia_rtol": np.nan}, {"sia_atol": np.inf}, {"sia_rtol": 0, "sia_atol": 0}):
+            with self.subTest(options=options), self.assertRaises(ConfigurationError):
+                MF6PQC(**options)
+        for field in ("print_chemistry_mask", "porosity_update_mask"):
+            for value in (np.nan, -1, 0.2, 2):
+                with self.subTest(field=field, value=value), self.assertRaises(ConfigurationError):
+                    MF6PQC(nxyz=1, **{field: value})
+
+    def test_indices_check_both_int32_bounds_before_cast(self):
+        for value in (-4294967296, [-4294967296], 2147483648, [2147483648], True, [True], 1.1):
+            with (
+                self.subTest(value=value),
+                self.assertRaises((ValueError, OverflowError, TypeError)),
+            ):
+                create_ic_array_from_map(1, {"solution": value})
+        np.testing.assert_array_equal(create_ic_array_from_map(1, {"solution": -1}), [-1] * 7)
+
+    def test_case_name_cannot_be_a_path(self):
+        for name in ("../other", r"a\b", ".", "x:y"):
+            with self.subTest(name=name), self.assertRaises(ConfigurationError):
+                MF6PQC(case_name=name)
+
+
+class BackendRegressionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "db").touch()
+        (self.root / "input").touch()
+        self.factory = FakeFactory()
+
+    def simulator(self, **options):
+        sim = MF6PQC(
+            nxyz=2,
+            db_path=self.root / "db",
+            pqi_path=self.root / "input",
+            output_dir=self.root / "out",
+            backend_factory=self.factory,
+            **options,
+        )
+        self.addCleanup(sim.finalize)
+        return sim
+
+    def test_status_failure_raises_but_signed_getters_survive(self):
+        checked = CheckedPhreeqcRM(
+            SimpleNamespace(
+                RunCells=lambda: -3, GetErrorString=lambda: "bad chemistry", GetValue=lambda: -1
+            )
+        )
+        with self.assertRaisesRegex(BackendError, "RunCells.*bad chemistry"):
+            checked.RunCells()
+        self.assertEqual(checked.GetValue(), -1)
+
+    def test_failed_instances_cannot_reenter_native_solvers(self):
+        sim = self.simulator()
+        sim.setup({"solution": 0})
+
+        def fail(_):
+            raise RuntimeError("native solve failed")
+
+        with self.assertRaisesRegex(RuntimeError, "native solve failed"):
+            sim._run_coupling(fail)
+        self.assertEqual(self.factory.chemistry.closed, 1)
+        self.assertEqual(self.factory.chemistry.broken, 1)
+        with self.assertRaisesRegex(CouplingError, "finalized"):
+            sim.setup({"solution": 0})
+        with self.assertRaisesRegex(CouplingError, "finalized"):
+            sim.run()
+        sim.finalize()
+        self.assertIsNone(sim.phreeqc_rm)
+        self.assertIsNone(sim.modflow_api)
+        self.assertEqual(self.factory.chemistry.closed, 1)
+
+    def test_hook_failure_closes_backends_and_clears_run_state(self):
+        sim = self.simulator()
+        sim.setup({"solution": 0})
+
+        def fail(sim, state):
+            raise RuntimeError("audit failed")
+
+        with self.assertRaisesRegex(RuntimeError, "audit failed"):
+            sim._run_coupling(
+                lambda instance: instance._coupling_hooks.on_step(instance, None),
+                CouplingMethod.SNIA,
+                hooks=CouplingHooks(on_step=fail),
+            )
+        self.assertFalse(sim._run_active)
+        self.assertFalse(sim._run_completed)
+        self.assertIsNone(sim._coupling_hooks)
+        self.assertIsNone(sim.phreeqc_rm)
+
+    def test_phase_hooks_are_rejected_for_unsupported_algorithms(self):
+        sim = self.simulator()
+        with self.assertRaisesRegex(ConfigurationError, "require SNIA"):
+            sim.run("Strang", hooks=CouplingHooks(on_transport=lambda *_: None))
+        self.assertFalse(sim._run_active)
+
+    def test_worker_cleanup_survives_file_close_failure(self):
+        sim = self.simulator()
+
+        def fail():
+            raise RuntimeError("close failed")
+
+        self.factory.chemistry.CloseFiles = fail
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            sim.finalize()
+        self.assertEqual(self.factory.chemistry.broken, 1)
+        self.assertTrue(any("CloseFiles" in str(item.message) for item in caught))
+
+    def test_density_never_overwrites_unrelated_selected_output(self):
+        sim = self.simulator(if_update_density=True, use_phreeqc_calculated_density=True)
+        self.factory.chemistry.GetDensityCalculated = lambda: np.array([1.1, 1.2])
+        sim.setup({"solution": 0})
+        np.testing.assert_array_equal(sim.selected_output, [[0.25, 0.25]])
+        update_selected_output(sim)
+        np.testing.assert_array_equal(sim.selected_output, [[0.25, 0.25]])
+        self.factory.chemistry.GetSelectedOutput = lambda: np.ones(4)
+        with self.assertRaisesRegex(BackendError, "size changed"):
+            update_selected_output(sim)
+
+    def test_time_units_and_ats_fail_before_native_loading(self):
+        (self.root / "mfsim.nam").write_text('TDIS6 "model time.tdis"\n', encoding="utf-8")
+        tdis = self.root / "model time.tdis"
+        for units in ("SECONDS", "MINUTES", "HOURS", "YEARS", "UNKNOWN"):
+            tdis.write_text(f"TIME_UNITS {units}\n", encoding="utf-8")
+            with self.subTest(units=units), self.assertRaisesRegex(ConfigurationError, "DAYS"):
+                validate_modflow_workspace(self.root)
+        tdis.write_text("TIME_UNITS DAYS\nATS6 FILEIN model.ats\n", encoding="utf-8")
+        with self.assertRaisesRegex(ConfigurationError, "ATS"):
+            validate_modflow_workspace(self.root)
+        tdis.write_text("TIME_UNITS DAYS # comment\n", encoding="utf-8")
+        validate_modflow_workspace(self.root)

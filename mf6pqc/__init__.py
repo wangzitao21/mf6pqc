@@ -12,7 +12,7 @@ from mf6pqc.config import (
     SimulationConfig,
 )
 from mf6pqc.coupling import CouplingMethod
-from mf6pqc.coupling.state import CouplingHooks
+from mf6pqc.coupling.common import CouplingHooks
 from mf6pqc.kinetics import ImplicitOptions, KineticReaction, KineticState
 from mf6pqc.mf6pqc import MF6PQC, mf6pqc
 from mf6pqc.parallel import ProcessBackendFactory

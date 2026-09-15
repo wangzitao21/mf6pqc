@@ -2,19 +2,12 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import flopy
 import numpy as np
-from example_utils import boundary_values, component_fields, executable_path
 
 from mf6pqc.utils import get_gwt_model_name
-
-CASE_DIR = Path(__file__).resolve().parent
-REPOSITORY_DIR = CASE_DIR.parents[1]
 
 
 @dataclass
@@ -42,14 +35,7 @@ class Config:
             raise ValueError("Grid dimensions must be positive")
         if any(
             not np.isfinite(value) or value <= 0
-            for value in (
-                self.length,
-                self.height,
-                self.width,
-                self.days,
-                self.dt,
-                self.save_every,
-            )
+            for value in (self.length, self.height, self.width, self.days, self.dt, self.save_every)
         ):
             raise ValueError(
                 "Lengths, duration, time step, and save interval must be positive and finite"
@@ -153,11 +139,15 @@ def build_model(
     """Build and write the MODFLOW 6 inputs and return the unrun simulation."""
     workspace = Path(workspace).expanduser().resolve()
     species = list(species)
+    if len(set(species)) != len(species):
+        raise ValueError("Component names must be unique")
     nxyz = config.nxyz
-    initial_fields = component_fields(species, initial_concentrations, nxyz)
-    inflow_concentrations = boundary_values(species, inflow_concentrations)
+    initial_fields = dict(
+        zip(species, np.asarray(initial_concentrations).reshape(len(species), nxyz), strict=True)
+    )
+    inflow_concentrations = np.asarray(inflow_concentrations).reshape(len(species))
     if mf6_executable is None:
-        mf6_executable = executable_path()
+        mf6_executable = "mf6"
     simulation = flopy.mf6.MFSimulation(
         sim_name="channel2d", sim_ws=str(workspace), exe_name=mf6_executable, verbosity_level=0
     )

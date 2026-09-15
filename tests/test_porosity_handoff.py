@@ -13,6 +13,7 @@ from unittest.mock import patch
 import numpy as np
 
 from mf6pqc.coupling.common import (
+    CouplingHooks,
     advance_to_end,
     commit_reaction_concentrations,
     run_reaction_step,
@@ -21,7 +22,6 @@ from mf6pqc.coupling.common import (
 )
 from mf6pqc.coupling.sia import sia_time_step
 from mf6pqc.coupling.snia import standard_time_step
-from mf6pqc.coupling.state import CouplingHooks
 from mf6pqc.coupling.strang import strang_time_step
 from mf6pqc.coupling.thermal_snia import thermal_time_step
 from mf6pqc.exceptions import BackendError, CouplingError

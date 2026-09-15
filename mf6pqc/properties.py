@@ -61,7 +61,7 @@ def calculate_porosity(
     mineral_delta_moles = selected[indices, :]
     if not np.all(np.isfinite(mineral_delta_moles)):
         raise ValueError("Mineral mole changes contain non-finite values")
-    total_volume_change = np.sum(volumes * mineral_delta_moles, axis=0)
+    total_volume_change = np.einsum("i,ij->j", volumes.ravel(), mineral_delta_moles)
     return current - total_volume_change
 
 

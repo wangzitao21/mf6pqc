@@ -2,30 +2,39 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import sys
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import numpy as np
-from ex011_PHT3D_11.modflow_model import build_model
-from example_utils import configure_logging, library_path, process_backend, runtime_path
 
+from examples.ex011_PHT3D_11.modflow_model import build_model
 from mf6pqc import (
     MF6PQC,
     BackendPaths,
     CellFields,
     ChemistryOptions,
-    FeedbackOptions,
     OutputOptions,
+    ProcessBackendFactory,
     SimulationConfig,
 )
 
-CASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = CASE_DIR / "input_data"
+WORKSPACE = CASE_DIR / "simulation"
+OUTPUT_DIR = CASE_DIR / "output"
+MODFLOW_LIBRARY = Path(
+    os.environ.get(
+        "MF6PQC_LIBMF6",
+        CASE_DIR.parents[1]
+        / "bin"
+        / "mf6.8.0"
+        / {"win32": "libmf6.dll", "darwin": "libmf6.dylib"}.get(sys.platform, "libmf6.so"),
+    )
+)
+
 POROSITY = 0.3
 NLAY = 58
 NROW = 1
@@ -70,9 +79,6 @@ def cell_centers_z() -> np.ndarray:
 
 
 def main() -> None:
-    """Configure, build, run, and save this reactive-transport benchmark."""
-    workspace = runtime_path(__file__, "simulation")
-    output_dir = runtime_path(__file__, "output")
     reaction_water_volume_l = 1.0
     reaction_steps = list(range(TRANSPORT_SUBSTEPS, TOTAL_TRANSPORT_STEPS + 1, TRANSPORT_SUBSTEPS))
     save_steps = list(range(50, TOTAL_TRANSPORT_STEPS + 1, 50))
@@ -84,28 +90,16 @@ def main() -> None:
         case_name="ex011",
         nxyz=NXYZ,
         nthreads=1,
-        backend_factory=process_backend(16),
+        backend_factory=ProcessBackendFactory(processes=min(32, os.cpu_count() or 1)),
         paths=BackendPaths(
             database=INPUT_DIR / "database.dat",
             chemistry_input=INPUT_DIR / "input.pqi",
-            modflow_library=library_path(),
-            workspace=workspace,
-            output_directory=output_dir,
+            modflow_library=MODFLOW_LIBRARY,
+            workspace=WORKSPACE,
+            output_directory=OUTPUT_DIR,
         ),
-        fields=CellFields(
-            temperature_c=15.0,
-            pressure_atm=2.0,
-            porosity=POROSITY,
-            saturation=1.0,
-            density_kg_per_litre=1.0,
-        ),
-        chemistry=ChemistryOptions(
-            print_chemistry_mask=0,
-            transport_water_component=False,
-            use_solution_density_volume=False,
-            signed_components=(),
-        ),
-        feedback=FeedbackOptions(update_porosity_and_k=False, update_density=False),
+        fields=CellFields(temperature_c=15.0, porosity=POROSITY),
+        chemistry=ChemistryOptions(signed_components=()),
         output=OutputOptions(save_steps=save_steps, progress_interval=50),
         reaction_steps=reaction_steps,
         fail_on_modflow_nonconvergence=True,
@@ -125,7 +119,7 @@ def main() -> None:
         ambient_concentrations[charge_index] = 0.0
         recharge_concentrations[charge_index] = 0.0
         build_model(
-            workspace=workspace,
+            workspace=WORKSPACE,
             species=species,
             initial_concentrations=initial_concentrations,
             ambient_concentrations=ambient_concentrations,
@@ -159,5 +153,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    configure_logging()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

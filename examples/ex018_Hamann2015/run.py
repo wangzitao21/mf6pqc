@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sys
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import numpy as np
-from ex018_Hamann2015.modflow_model import Grid, TimeConfig, build_model
-from example_utils import configure_logging, library_path, process_backend, runtime_path
 
+from examples.ex018_Hamann2015.modflow_model import Grid, TimeConfig, build_model
 from mf6pqc import (
     MF6PQC,
     BackendPaths,
@@ -22,11 +20,23 @@ from mf6pqc import (
     ChemistryOptions,
     FeedbackOptions,
     OutputOptions,
+    ProcessBackendFactory,
     SimulationConfig,
 )
 
-CASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = CASE_DIR / "input_data"
+WORKSPACE = CASE_DIR / "simulation"
+OUTPUT_DIR = CASE_DIR / "output"
+MODFLOW_LIBRARY = Path(
+    os.environ.get(
+        "MF6PQC_LIBMF6",
+        CASE_DIR.parents[1]
+        / "bin"
+        / "mf6.8.0"
+        / {"win32": "libmf6.dll", "darwin": "libmf6.dylib"}.get(sys.platform, "libmf6.so"),
+    )
+)
+
 DAYS_PER_YEAR = 365.25
 POROSITY = 0.25
 HYDRAULIC_CONDUCTIVITY = 1e-05 * 86400.0
@@ -107,49 +117,33 @@ def water_only_sink_rates(grid: Grid, split_x: float = SPLIT_X) -> np.ndarray:
 
 
 def main() -> None:
-    """Configure, build, run, and save this reactive-transport benchmark."""
     grid = build_reference_grid()
     evaporation_rates = evaporation_rates_mm_per_year(grid, split_x=SPLIT_X)
     time_config = build_time_config()
-    workspace = runtime_path(__file__, "simulation")
-    output_dir = runtime_path(__file__, "output")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     equilibrium_phases = np.full(grid.nxyz, 2, dtype=np.int32)
     equilibrium_phases[: grid.ncol] = 1
     simulation_config = SimulationConfig(
         case_name="ex018",
         nxyz=grid.nxyz,
         nthreads=1,
-        backend_factory=process_backend(16),
+        backend_factory=ProcessBackendFactory(processes=min(32, os.cpu_count() or 1)),
         paths=BackendPaths(
             database=INPUT_DIR / "database.dat",
             chemistry_input=INPUT_DIR / "input.pqi",
-            modflow_library=library_path(),
-            workspace=workspace,
-            output_directory=output_dir,
+            modflow_library=MODFLOW_LIBRARY,
+            workspace=WORKSPACE,
+            output_directory=OUTPUT_DIR,
         ),
-        fields=CellFields(
-            temperature_c=25.0,
-            pressure_atm=2.0,
-            porosity=POROSITY,
-            saturation=1.0,
-            density_kg_per_litre=0.99987,
-        ),
-        chemistry=ChemistryOptions(
-            print_chemistry_mask=0,
-            transport_water_component=True,
-            use_solution_density_volume=False,
-        ),
+        fields=CellFields(porosity=POROSITY, density_kg_per_litre=0.99987),
+        chemistry=ChemistryOptions(transport_water_component=True),
         feedback=FeedbackOptions(
-            update_porosity_and_k=False,
             update_density=True,
             water_only_sink_rates=water_only_sink_rates(grid, split_x=SPLIT_X),
             use_phreeqc_calculated_density=True,
         ),
         output=OutputOptions(
-            save_interval=1,
-            save_steps=list(time_config.snapshot_steps_global),
-            progress_interval=100,
+            save_steps=list(time_config.snapshot_steps_global), progress_interval=100
         ),
         fail_on_modflow_nonconvergence=True,
     )
@@ -160,7 +154,7 @@ def main() -> None:
         species = simulator.get_components()
         recharge_concentrations = simulator.get_initial_concentrations(0)
         build_model(
-            workspace=workspace,
+            workspace=WORKSPACE,
             species=species,
             initial_concentrations=initial_concentrations,
             recharge_concentrations=recharge_concentrations,
@@ -199,20 +193,20 @@ def main() -> None:
                 np.average(evaporation_rates, weights=grid.delr[grid.x_centres >= SPLIT_X])
             ),
         }
-        (output_dir / "model_metadata.json").write_text(
+        (OUTPUT_DIR / "model_metadata.json").write_text(
             json.dumps(metadata, indent=2), encoding="utf-8"
         )
-        np.save(output_dir / "grid_delr_m.npy", grid.delr)
-        np.save(output_dir / "grid_delv_m.npy", grid.delv)
+        np.save(OUTPUT_DIR / "grid_delr_m.npy", grid.delr)
+        np.save(OUTPUT_DIR / "grid_delv_m.npy", grid.delv)
         simulator.run()
         simulator.save_results()
         np.save(
-            output_dir / "result_times_years.npy",
+            OUTPUT_DIR / "result_times_years.npy",
             np.asarray([0.0, *time_config.snapshot_years], dtype=float),
         )
     print("ex018 done.")
 
 
 if __name__ == "__main__":
-    configure_logging()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

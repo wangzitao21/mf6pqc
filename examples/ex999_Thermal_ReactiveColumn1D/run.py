@@ -2,30 +2,37 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import sys
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
-from ex999_Thermal_ReactiveColumn1D.modflow_model import build_model
-from example_utils import configure_logging, library_path, runtime_path
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
+from examples.ex999_Thermal_ReactiveColumn1D.modflow_model import build_model
 from mf6pqc import (
     MF6PQC,
     BackendPaths,
     CellFields,
-    ChemistryOptions,
     EnergyOptions,
     FeedbackOptions,
     OutputOptions,
     SimulationConfig,
 )
 
-CASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = CASE_DIR / "input_data"
+WORKSPACE = CASE_DIR / "simulation"
+OUTPUT_DIR = CASE_DIR / "output"
+MODFLOW_LIBRARY = Path(
+    os.environ.get(
+        "MF6PQC_LIBMF6",
+        CASE_DIR.parents[1]
+        / "bin"
+        / "mf6.8.0"
+        / {"win32": "libmf6.dll", "darwin": "libmf6.dylib"}.get(sys.platform, "libmf6.so"),
+    )
+)
+
 NLAY = 1
 NROW = 1
 NCOL = 41
@@ -59,9 +66,6 @@ THERMAL_A4 = 133.15
 
 
 def main() -> None:
-    """Configure, build, run, and save the thermal reactive-transport example."""
-    workspace = runtime_path(__file__, "simulation")
-    output_dir = runtime_path(__file__, "output")
     simulation_config = SimulationConfig(
         case_name="ex999",
         nxyz=NXYZ,
@@ -69,18 +73,11 @@ def main() -> None:
         paths=BackendPaths(
             database=INPUT_DIR / "database.dat",
             chemistry_input=INPUT_DIR / "input.pqi",
-            modflow_library=library_path(),
-            workspace=workspace,
-            output_directory=output_dir,
+            modflow_library=MODFLOW_LIBRARY,
+            workspace=WORKSPACE,
+            output_directory=OUTPUT_DIR,
         ),
-        fields=CellFields(
-            temperature_c=INITIAL_TEMPERATURE,
-            pressure_atm=2.0,
-            porosity=POROSITY,
-            saturation=1.0,
-            density_kg_per_litre=1.0,
-        ),
-        chemistry=ChemistryOptions(print_chemistry_mask=0),
+        fields=CellFields(temperature_c=INITIAL_TEMPERATURE, porosity=POROSITY),
         feedback=FeedbackOptions(
             update_porosity_and_k=True, mineral_molar_volumes={"ThermalMineral": 0.04}
         ),
@@ -92,7 +89,7 @@ def main() -> None:
             sync_temperature_to_chemistry=True,
             validate_initial_fields=True,
         ),
-        output=OutputOptions(save_interval=1, progress_interval=10),
+        output=OutputOptions(progress_interval=10),
         fail_on_modflow_nonconvergence=True,
     )
     with MF6PQC.from_config(simulation_config) as simulator:
@@ -105,7 +102,7 @@ def main() -> None:
             initial_concentrations[start : start + NXYZ] = 0.0
             inflow_concentrations[charge_index] = 0.0
         build_model(
-            workspace=workspace,
+            workspace=WORKSPACE,
             species=species,
             initial_concentrations=initial_concentrations,
             inflow_concentrations=inflow_concentrations,
@@ -145,5 +142,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    configure_logging()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

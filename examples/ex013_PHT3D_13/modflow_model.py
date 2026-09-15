@@ -3,14 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import flopy
 import numpy as np
-from example_utils import boundary_values, component_fields, executable_path
 
 from mf6pqc.utils import get_gwt_model_name
 
@@ -43,12 +39,16 @@ def build_model(
     """Build and write the MODFLOW 6 inputs and return the unrun simulation."""
     workspace = Path(workspace).expanduser().resolve()
     species = list(species)
+    if len(set(species)) != len(species):
+        raise ValueError("Component names must be unique")
     nxyz = nlay * nrow * ncol
-    initial_fields = component_fields(species, initial_concentrations, nxyz)
-    pulse_concentrations = boundary_values(species, pulse_concentrations)
-    chase_concentrations = boundary_values(species, chase_concentrations)
+    initial_fields = dict(
+        zip(species, np.asarray(initial_concentrations).reshape(len(species), nxyz), strict=True)
+    )
+    pulse_concentrations = np.asarray(pulse_concentrations).reshape(len(species))
+    chase_concentrations = np.asarray(chase_concentrations).reshape(len(species))
     if mf6_executable is None:
-        mf6_executable = executable_path()
+        mf6_executable = "mf6"
     auxiliary_names = [f"SP{index:03d}" for index in range(len(species))]
     simulation = flopy.mf6.MFSimulation(
         sim_name="model", sim_ws=str(workspace), exe_name=mf6_executable, verbosity_level=0
@@ -66,15 +66,7 @@ def build_model(
         filename="flow.ims",
     )
     simulation.register_ims_package(flow_ims, [gwf.name])
-    discretization = dict(
-        nlay=nlay,
-        nrow=nrow,
-        ncol=ncol,
-        delr=delr,
-        delc=delc,
-        top=top,
-        botm=botm,
-    )
+    discretization = dict(nlay=nlay, nrow=nrow, ncol=ncol, delr=delr, delc=delc, top=top, botm=botm)
     flopy.mf6.ModflowGwfdis(gwf, **discretization)
     flopy.mf6.ModflowGwfic(gwf, strt=initial_head)
     flopy.mf6.ModflowGwfnpf(

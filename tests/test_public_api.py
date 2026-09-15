@@ -267,5 +267,52 @@ class ResultSerializationTests(unittest.TestCase):
             self.assertIn("effective_K", manifest["energy"]["files"])
 
 
-if __name__ == "__main__":
-    unittest.main()
+class SerializationRegressionTests(unittest.TestCase):
+    def test_invalid_metadata_preserves_existing_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "results.npy"
+            path.write_bytes(b"existing output")
+            for metadata in ({"bad": np.nan}, {"bad": object()}):
+                with self.subTest(metadata=metadata), self.assertRaises((ValueError, TypeError)):
+                    save_results(
+                        tmp,
+                        "case",
+                        ["A"],
+                        np.ones((1, 1, 1)),
+                        [],
+                        [],
+                        [],
+                        False,
+                        False,
+                        metadata=metadata,
+                    )
+                self.assertEqual(path.read_bytes(), b"existing output")
+
+    def test_empty_reaction_history_has_valid_diffusion_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            save_results(
+                tmp, "case", ["A"], np.ones((1, 1, 2)), [], [], [], False, True, result_times=[0]
+            )
+            self.assertEqual(np.load(Path(tmp) / "results_diffc.npy").shape, (0, 2))
+            manifest = json.loads((Path(tmp) / "results_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["time_units"], "days")
+
+    def test_impossible_porosity_is_not_exported(self):
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(ValueError, "Porosity/K"):
+            save_results(tmp, "case", ["A"], np.ones((1, 1, 1)), [[1.1]], [[1]], [], True, False)
+
+    def test_failed_array_write_preserves_previous_file_and_removes_temporary(self):
+        from unittest.mock import patch
+
+        from mf6pqc.output_processing import _atomic_save
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "results.npy"
+            path.write_bytes(b"previous result")
+            with (
+                patch("mf6pqc.output_processing.np.save", side_effect=OSError("disk full")),
+                self.assertRaisesRegex(OSError, "disk full"),
+            ):
+                _atomic_save(path, np.ones((1, 1, 1)))
+            self.assertEqual(path.read_bytes(), b"previous result")
+            self.assertEqual(list(Path(temporary).iterdir()), [path])

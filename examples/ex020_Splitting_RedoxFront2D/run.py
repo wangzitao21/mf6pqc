@@ -1,106 +1,40 @@
-"""Run a redox-front realization or compare the supported splitting methods."""
+"""Run the two-dimensional redox-front comparison."""
 
 from __future__ import annotations
 
-import argparse
-import csv
-import json
-import subprocess
+import logging
+import os
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import numpy as np
-from ex020_Splitting_RedoxFront2D.modflow_model import build_model
-from example_utils import configure_logging, library_path, runtime_path
+import pandas as pd
 
-from mf6pqc import MF6PQC, BackendPaths, CellFields, OutputOptions, SIAOptions, SimulationConfig
+from examples.ex020_Splitting_RedoxFront2D.modflow_model import build_model
+from mf6pqc import (
+    MF6PQC,
+    BackendPaths,
+    CellFields,
+    OutputOptions,
+    SIAOptions,
+    SimulationConfig,
+)
 from mf6pqc.utils import get_gwt_model_name
 
-CASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = CASE_DIR / "input_data"
-REPO_ROOT = CASE_DIR.parents[1]
-
-
-@dataclass(frozen=True)
-class Config:
-    matrix_conductivity: float
-    channel_conductivity: float
-    low_conductivity: float
-    donor_concentration_scale: float
-    matrix_oxidant_capacity: float
-    lens_oxidant_capacity: float
-    nrow: int
-    ncol: int
-    length: float
-    width: float
-    porosity: float
-    pulse_duration: float
-    flush_duration: float
-    coarse_steps: tuple[int, ...]
-    reference_check_steps: tuple[int, ...]
-    reference_steps: tuple[int, ...]
-    methods: tuple[str, ...]
-    report_components: tuple[str, ...]
-    kinetic_rate_per_day: float
-    sia_max_iterations: int
-    sia_rtol: float
-    sia_atol: float
-    sia_source_relaxation: float
-
-    @property
-    def nxyz(self):
-        return self.nrow * self.ncol
-
-    @property
-    def field_names(self):
-        return (*self.report_components, "Extent")
-
-    @property
-    def field_scales(self):
-        return {"Don": self.donor_concentration_scale, "Extent": self.lens_oxidant_capacity}
-
-
-def hydraulic_conductivity_field(nrow: int, ncol: int, *, config: Config) -> np.ndarray:
-    rows, columns = np.indices((nrow, ncol))
-    channel_center = 0.5 * (nrow - 1) + 1.8 * np.sin(2.0 * np.pi * columns / max(ncol - 1, 1))
-    distance = np.abs(rows - channel_center)
-    field = np.full((nrow, ncol), config.matrix_conductivity, dtype=float)
-    field[distance <= 1.25] = config.channel_conductivity
-    field[(columns > ncol // 2) & (distance > 3.5)] = config.low_conductivity
-    return field
-
-
-def reactive_lens_mask(nrow: int, ncol: int) -> np.ndarray:
-    rows, columns = np.indices((nrow, ncol))
-    lens_center = 0.72 * (nrow - 1) - 0.34 * columns
-    return (
-        (columns >= int(0.28 * ncol))
-        & (columns <= int(0.76 * ncol))
-        & (np.abs(rows - lens_center) <= 1.35)
+WORKSPACE = CASE_DIR / "simulation"
+OUTPUT_DIR = CASE_DIR / "output"
+MODFLOW_LIBRARY = Path(
+    os.environ.get(
+        "MF6PQC_LIBMF6",
+        CASE_DIR.parents[1]
+        / "bin"
+        / "mf6.8.0"
+        / {"win32": "libmf6.dll", "darwin": "libmf6.dylib"}.get(sys.platform, "libmf6.so"),
     )
-
-
-def oxidant_capacity_field(nrow: int, ncol: int, *, config: Config) -> np.ndarray:
-    return np.where(
-        reactive_lens_mask(nrow, ncol), config.lens_oxidant_capacity, config.matrix_oxidant_capacity
-    )
-
-
-def _run_paths(label: str) -> tuple[Path, Path]:
-    return (
-        runtime_path(__file__, "simulation") / label,
-        runtime_path(__file__, "output") / "runs" / label,
-    )
-
-
-def _kinetics_zones(*, config: Config) -> np.ndarray:
-    return np.where(reactive_lens_mask(config.nrow, config.ncol).ravel(), 2, 1).astype(np.int32)
+)
 
 
 MATRIX_OXIDANT_CAPACITY = 0.0002
@@ -129,31 +63,6 @@ MATRIX_CONDUCTIVITY = 0.45
 CHANNEL_CONDUCTIVITY = 1.35
 LOW_CONDUCTIVITY = 0.25
 DONOR_CONCENTRATION_SCALE = 0.001
-CASE_CONFIG = Config(
-    matrix_oxidant_capacity=MATRIX_OXIDANT_CAPACITY,
-    lens_oxidant_capacity=LENS_OXIDANT_CAPACITY,
-    nrow=NROW,
-    ncol=NCOL,
-    length=LENGTH,
-    width=WIDTH,
-    porosity=POROSITY,
-    pulse_duration=PULSE_DURATION,
-    flush_duration=FLUSH_DURATION,
-    coarse_steps=COARSE_STEPS,
-    reference_check_steps=REFERENCE_CHECK_STEPS,
-    reference_steps=REFERENCE_STEPS,
-    methods=METHODS,
-    report_components=REPORT_COMPONENTS,
-    kinetic_rate_per_day=KINETIC_RATE_PER_DAY,
-    sia_max_iterations=SIA_MAX_ITERATIONS,
-    sia_rtol=SIA_RTOL,
-    sia_atol=SIA_ATOL,
-    sia_source_relaxation=SIA_SOURCE_RELAXATION,
-    matrix_conductivity=MATRIX_CONDUCTIVITY,
-    channel_conductivity=CHANNEL_CONDUCTIVITY,
-    low_conductivity=LOW_CONDUCTIVITY,
-    donor_concentration_scale=DONOR_CONCENTRATION_SCALE,
-)
 INLET_HEAD = 0.8
 OUTLET_HEAD = 0.0
 TOP = 1.0
@@ -161,6 +70,38 @@ BOTM = 0.0
 ALH = 0.12
 ATH1 = 0.012
 DIFFC = 0.0
+
+
+def hydraulic_conductivity_field(nrow: int, ncol: int) -> np.ndarray:
+    rows, columns = np.indices((nrow, ncol))
+    channel_center = 0.5 * (nrow - 1) + 1.8 * np.sin(2.0 * np.pi * columns / max(ncol - 1, 1))
+    distance = np.abs(rows - channel_center)
+    field = np.full((nrow, ncol), MATRIX_CONDUCTIVITY, dtype=float)
+    field[distance <= 1.25] = CHANNEL_CONDUCTIVITY
+    field[(columns > ncol // 2) & (distance > 3.5)] = LOW_CONDUCTIVITY
+    return field
+
+
+def reactive_lens_mask(nrow: int, ncol: int) -> np.ndarray:
+    rows, columns = np.indices((nrow, ncol))
+    lens_center = 0.72 * (nrow - 1) - 0.34 * columns
+    return (
+        (columns >= int(0.28 * ncol))
+        & (columns <= int(0.76 * ncol))
+        & (np.abs(rows - lens_center) <= 1.35)
+    )
+
+
+def oxidant_capacity_field(nrow: int, ncol: int) -> np.ndarray:
+    return np.where(reactive_lens_mask(nrow, ncol), LENS_OXIDANT_CAPACITY, MATRIX_OXIDANT_CAPACITY)
+
+
+def _run_paths(label: str) -> tuple[Path, Path]:
+    return (WORKSPACE / label, OUTPUT_DIR / "runs" / label)
+
+
+def _kinetics_zones() -> np.ndarray:
+    return np.where(reactive_lens_mask(NROW, NCOL).ravel(), 2, 1).astype(np.int32)
 
 
 def run_realization(
@@ -175,11 +116,11 @@ def run_realization(
         paths=BackendPaths(
             database=INPUT_DIR / "database.dat",
             chemistry_input=INPUT_DIR / "input.pqi",
-            modflow_library=library_path(),
+            modflow_library=MODFLOW_LIBRARY,
             workspace=workspace,
             output_directory=output_dir,
         ),
-        fields=CellFields(temperature_c=20.0, porosity=POROSITY, saturation=1.0),
+        fields=CellFields(temperature_c=20.0, porosity=POROSITY),
         sia=SIAOptions(
             maximum_iterations=SIA_MAX_ITERATIONS,
             relative_tolerance=SIA_RTOL,
@@ -191,7 +132,7 @@ def run_realization(
     )
     with MF6PQC.from_config(simulation_config) as simulator:
         initial_concentrations = simulator.setup(
-            ic_map={"solution": 0, "kinetics": _kinetics_zones(config=CASE_CONFIG)}
+            ic_map={"solution": 0, "kinetics": _kinetics_zones()}
         )
         pulse_concentrations = simulator.get_initial_concentrations(1)
         background_concentrations = simulator.get_initial_concentrations(0)
@@ -212,7 +153,7 @@ def run_realization(
             top=TOP,
             botm=BOTM,
             porosity=POROSITY,
-            hydraulic_conductivity=hydraulic_conductivity_field(NROW, NCOL, config=CASE_CONFIG),
+            hydraulic_conductivity=hydraulic_conductivity_field(NROW, NCOL),
             inlet_head=INLET_HEAD,
             outlet_head=OUTLET_HEAD,
             alh=ALH,
@@ -265,65 +206,18 @@ def run_realization(
             }[method],
             "total_sia_iterations": sia_iterations,
             "wall_time_seconds": simulator.last_run_wall_time_seconds,
-            "sia_diagnostics": list(simulator.sia_diagnostics),
         }
         return (fields, metadata)
 
 
-def _persist_child(label: str, fields: dict[str, np.ndarray], metadata: dict) -> None:
-    _, output_dir = _run_paths(label)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    np.savez(output_dir / "final_fields.npz", **fields)
-    (output_dir / "metadata.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-
-
-def _launch(
-    method: str, logical_steps: tuple[int, int], label: str, *, config: Config
-) -> tuple[dict[str, np.ndarray], dict]:
-    command = [
-        sys.executable,
-        str(CASE_DIR / "run.py"),
-        "--method",
-        method,
-        "--steps",
-        str(logical_steps[0]),
-        str(logical_steps[1]),
-        "--label",
-        label,
-    ]
-    subprocess.run(command, cwd=REPO_ROOT, check=True)
-    _, output_dir = _run_paths(label)
-    with np.load(output_dir / "final_fields.npz") as archive:
-        fields = {name: archive[name].copy() for name in config.field_names}
-    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
-    return (fields, metadata)
-
-
-def _validate_fields(label: str, fields: dict[str, np.ndarray], *, config: Config) -> None:
-    for component, field in fields.items():
-        if field.shape != (config.nrow, config.ncol) or not np.all(np.isfinite(field)):
-            raise AssertionError(f"{label}/{component} is not a finite 2-D field")
-        if np.min(field) < -2e-10:
-            raise AssertionError(f"{label}/{component} contains negative concentration")
-    if np.max(fields["Don"]) > 0.001003:
-        raise AssertionError(f"{label} donor exceeds the inlet maximum")
-    capacity = oxidant_capacity_field(config.nrow, config.ncol, config=config)
-    if np.any(fields["Extent"] > capacity + 5e-08):
-        raise AssertionError(f"{label} exceeds the local solid-oxidant capacity")
-    if np.min(fields["Extent"]) < -2e-10:
-        raise AssertionError(f"{label} has an invalid cumulative reaction extent")
-
-
 def field_error_metrics(
-    fields: dict[str, np.ndarray], reference: dict[str, np.ndarray], *, config: Config
+    fields: dict[str, np.ndarray], reference: dict[str, np.ndarray]
 ) -> dict[str, float]:
     metrics: dict[str, float] = {}
     normalized_differences = []
-    for field_name in config.field_names:
+    for field_name in FIELD_NAMES:
         difference = fields[field_name] - reference[field_name]
-        scale = config.field_scales[field_name]
+        scale = FIELD_SCALES[field_name]
         metrics[f"{field_name}_rmse"] = float(np.sqrt(np.mean(difference**2)))
         metrics[f"{field_name}_nrmse"] = float(np.sqrt(np.mean((difference / scale) ** 2)))
         metrics[f"{field_name}_linf"] = float(np.max(np.abs(difference)))
@@ -332,14 +226,14 @@ def field_error_metrics(
     return metrics
 
 
-def plume_diagnostics(fields: dict[str, np.ndarray], *, config: Config) -> dict[str, float]:
-    delr = config.length / config.ncol
-    delc = config.width / config.nrow
-    water_volume_litres = delr * delc * config.porosity * 1000.0
-    x = (np.arange(config.ncol) + 0.5) * delr
+def plume_diagnostics(fields: dict[str, np.ndarray]) -> dict[str, float]:
+    delr = LENGTH / NCOL
+    delc = WIDTH / NROW
+    water_volume_litres = delr * delc * POROSITY * 1000.0
+    x = (np.arange(NCOL) + 0.5) * delr
     donor = fields["Don"]
     extent = fields["Extent"]
-    capacity = oxidant_capacity_field(config.nrow, config.ncol, config=config)
+    capacity = oxidant_capacity_field(NROW, NCOL)
     donor_mass = float(np.sum(donor) * water_volume_litres)
     donor_by_column = np.sum(donor, axis=0)
     centroid = (
@@ -347,7 +241,7 @@ def plume_diagnostics(fields: dict[str, np.ndarray], *, config: Config) -> dict[
         if np.sum(donor_by_column) > 0.0
         else 0.0
     )
-    lens = reactive_lens_mask(config.nrow, config.ncol)
+    lens = reactive_lens_mask(NROW, NCOL)
     lens_extent_fraction = (
         float(np.sum(extent[lens]) / np.sum(extent)) if np.sum(extent) > 0.0 else 0.0
     )
@@ -364,47 +258,31 @@ def plume_diagnostics(fields: dict[str, np.ndarray], *, config: Config) -> dict[
     }
 
 
-def _write_metrics(rows: list[dict], output_dir: Path) -> None:
-    (output_dir / "comparison_metrics.json").write_text(
-        json.dumps(rows, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    fieldnames = sorted({key for row in rows for key in row})
-    with (output_dir / "comparison_metrics.csv").open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def run_comparison(*, config: Config) -> None:
-    output_dir = runtime_path(__file__, "output")
-    output_dir.mkdir(parents=True, exist_ok=True)
+def main() -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     fields: dict[str, dict[str, np.ndarray]] = {}
     work: dict[str, dict] = {}
-    for method in config.methods:
-        fields[method], work[method] = _launch(
-            method, config.coarse_steps, f"coarse_{method.lower()}", config=config
+    for method in METHODS:
+        fields[method], work[method] = run_realization(
+            method, COARSE_STEPS, f"coarse_{method.lower()}"
         )
-        _validate_fields(method, fields[method], config=config)
-    fields["ReferenceCheck"], work["ReferenceCheck"] = _launch(
-        "Strang", config.reference_check_steps, "reference_check_strang", config=config
+    fields["ReferenceCheck"], work["ReferenceCheck"] = run_realization(
+        "Strang", REFERENCE_CHECK_STEPS, "reference_check_strang"
     )
-    _validate_fields("ReferenceCheck", fields["ReferenceCheck"], config=config)
-    fields["Reference"], work["Reference"] = _launch(
-        "Strang", config.reference_steps, "reference_strang", config=config
+    fields["Reference"], work["Reference"] = run_realization(
+        "Strang", REFERENCE_STEPS, "reference_strang"
     )
-    _validate_fields("Reference", fields["Reference"], config=config)
-    fields["ReferenceCrossCheck"], work["ReferenceCrossCheck"] = _launch(
-        "SNIA", config.reference_steps, "reference_crosscheck_snia", config=config
+    fields["ReferenceCrossCheck"], work["ReferenceCrossCheck"] = run_realization(
+        "SNIA", REFERENCE_STEPS, "reference_crosscheck_snia"
     )
-    _validate_fields("ReferenceCrossCheck", fields["ReferenceCrossCheck"], config=config)
     rows = []
-    for label in (*config.methods, "ReferenceCheck", "ReferenceCrossCheck", "Reference"):
+    for label in (*METHODS, "ReferenceCheck", "ReferenceCrossCheck", "Reference"):
         errors = (
-            field_error_metrics(fields[label], fields["Reference"], config=config)
+            field_error_metrics(fields[label], fields["Reference"])
             if label != "Reference"
             else {
                 f"{component}_{metric}": 0.0
-                for component in config.field_names
+                for component in FIELD_NAMES
                 for metric in ("rmse", "nrmse", "linf")
             }
         )
@@ -414,7 +292,7 @@ def run_comparison(*, config: Config) -> None:
                 "label": label,
                 "method": work[label]["method"],
                 **errors,
-                **plume_diagnostics(fields[label], config=config),
+                **plume_diagnostics(fields[label]),
                 "logical_steps": work[label]["logical_steps"],
                 "transport_solves": work[label]["transport_solves"],
                 "reaction_evaluations": work[label]["reaction_evaluations"],
@@ -425,109 +303,24 @@ def run_comparison(*, config: Config) -> None:
     archive = {
         f"{label}_{component}": fields[label][component]
         for label in fields
-        for component in config.field_names
+        for component in FIELD_NAMES
     }
-    lens = reactive_lens_mask(config.nrow, config.ncol)
+    lens = reactive_lens_mask(NROW, NCOL)
     archive.update(
         {
-            "hydraulic_conductivity_m_per_day": hydraulic_conductivity_field(
-                config.nrow, config.ncol, config=config
-            ),
+            "hydraulic_conductivity_m_per_day": hydraulic_conductivity_field(NROW, NCOL),
             "reactive_lens_mask": lens.astype(np.uint8),
-            "solid_oxidant_capacity_model_mol": oxidant_capacity_field(
-                config.nrow, config.ncol, config=config
-            ),
-            "kinetic_rate_per_day": np.full(
-                (config.nrow, config.ncol), config.kinetic_rate_per_day, dtype=float
-            ),
-            "x_cell_centers_m": (np.arange(config.ncol, dtype=float) + 0.5)
-            * config.length
-            / config.ncol,
-            "y_cell_centers_m": (np.arange(config.nrow, dtype=float) + 0.5)
-            * config.width
-            / config.nrow,
-            "domain_extent_m": np.array([0.0, config.length, 0.0, config.width]),
+            "solid_oxidant_capacity_model_mol": oxidant_capacity_field(NROW, NCOL),
+            "kinetic_rate_per_day": np.full((NROW, NCOL), KINETIC_RATE_PER_DAY, dtype=float),
+            "x_cell_centers_m": (np.arange(NCOL, dtype=float) + 0.5) * LENGTH / NCOL,
+            "y_cell_centers_m": (np.arange(NROW, dtype=float) + 0.5) * WIDTH / NROW,
+            "domain_extent_m": np.array([0.0, LENGTH, 0.0, WIDTH]),
         }
     )
-    np.savez(output_dir / "final_fields_comparison.npz", **archive)
-    _write_metrics(rows, output_dir)
-    row_lookup = {row["label"]: row for row in rows}
-    coarse_errors = {method: row_lookup[method]["combined_nrmse"] for method in config.methods}
-    transport_work = {method: row_lookup[method]["transport_solves"] for method in config.methods}
-    wall_times = {method: row_lookup[method]["wall_time_seconds"] for method in config.methods}
-    sia_diagnostics = work["SIA"]["sia_diagnostics"]
-    validation = {
-        "benchmark_claim": "SIA < Strang < SNIA error at reversed work cost",
-        "primary_metric": "combined Don/solid-oxidant-extent NRMSE",
-        "field_scales": config.field_scales,
-        "coarse_error_order": "SIA < Strang < SNIA",
-        "coarse_combined_nrmse": coarse_errors,
-        "deterministic_work_order": "SIA > Strang > SNIA",
-        "coarse_transport_solves": transport_work,
-        "observed_wall_time_seconds": wall_times,
-        "observed_wall_time_has_expected_order": bool(
-            wall_times["SIA"] > wall_times["Strang"] > wall_times["SNIA"]
-        ),
-        "reference_check_combined_nrmse": row_lookup["ReferenceCheck"]["combined_nrmse"],
-        "cross_method_reference_nrmse": row_lookup["ReferenceCrossCheck"]["combined_nrmse"],
-        "reference_method": "Strang",
-        "reference_step_days": 0.125,
-        "reference_check_step_days": 0.25,
-        "sia_all_steps_converged": bool(sia_diagnostics)
-        and all(item["converged"] for item in sia_diagnostics),
-        "sia_step_iterations": [int(item["iterations"]) for item in sia_diagnostics],
-        "scenario": {
-            "pulse_duration_days": config.pulse_duration,
-            "flush_duration_days": config.flush_duration,
-            "coarse_steps_per_period": list(config.coarse_steps),
-            "matrix_oxidant_capacity_model_mol": config.matrix_oxidant_capacity,
-            "lens_oxidant_capacity_model_mol": config.lens_oxidant_capacity,
-            "kinetic_rate_per_day": config.kinetic_rate_per_day,
-        },
-    }
-    (output_dir / "validation.json").write_text(
-        json.dumps(validation, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    print("\nErrors against the refined Strang reference")
-    for row in rows:
-        print(
-            f"  {row['label']:14s}: combined NRMSE={row['combined_nrmse']:.6e}, Don mass={row['aqueous_donor_mol']:.4e} mol, extent sum={row['summed_oxidant_consumption_model_mol']:.4e}"
-        )
-    if not coarse_errors["SIA"] < coarse_errors["Strang"] < coarse_errors["SNIA"]:
-        raise AssertionError("Expected combined NRMSE order SIA < Strang < SNIA")
-    if not transport_work["SIA"] > transport_work["Strang"] > transport_work["SNIA"]:
-        raise AssertionError("Expected transport-work order SIA > Strang > SNIA")
-    if not validation["sia_all_steps_converged"]:
-        raise AssertionError("At least one strict SIA logical step did not converge")
-    if validation["reference_check_combined_nrmse"] > 0.005:
-        raise AssertionError(
-            "The 0.25-day Strang reference check differs too much from the 0.125-day reference"
-        )
-    if validation["cross_method_reference_nrmse"] > 0.005:
-        raise AssertionError(
-            "The 0.125-day SNIA cross-check differs too much from the 0.125-day Strang reference"
-        )
-    print(
-        f"Two-dimensional splitting validation passed; execute plot.ipynb to create figures from {output_dir}"
-    )
-
-
-def main() -> None:
-    """Parse the command line and run one realization or the full comparison."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--method", choices=METHODS)
-    parser.add_argument("--steps", type=int, nargs=2, metavar=("PULSE", "FLUSH"))
-    parser.add_argument("--label")
-    args = parser.parse_args()
-    if args.method:
-        if args.steps is None or args.label is None:
-            parser.error("--method requires --steps and --label")
-        realization, metadata = run_realization(args.method, tuple(args.steps), args.label)
-        _persist_child(args.label, realization, metadata)
-    else:
-        run_comparison(config=CASE_CONFIG)
+    np.savez(OUTPUT_DIR / "final_fields_comparison.npz", **archive)
+    pd.DataFrame(rows).to_csv(OUTPUT_DIR / "comparison_metrics.csv", index=False)
 
 
 if __name__ == "__main__":
-    configure_logging()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

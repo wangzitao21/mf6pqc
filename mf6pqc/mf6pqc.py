@@ -18,7 +18,7 @@ from mf6pqc.coupling import (
     run_strang,
     run_thermal_snia,
 )
-from mf6pqc.coupling.state import CouplingHooks
+from mf6pqc.coupling.common import CouplingHooks
 from mf6pqc.exceptions import ConfigurationError, CouplingError
 from mf6pqc.input_processing import (
     setup_mixed_ic,
@@ -113,12 +113,7 @@ class mf6pqc:
         fail_on_porosity_clipping: bool = False,
         implicit_options: ImplicitOptions | None = None,
     ):
-        """
-        Initialize a coupled MODFLOW 6 and PhreeqcRM simulator.
-        Parameters
-        ----------
-        See class signature for configuration options.
-        """
+        """Initialize a coupled MODFLOW 6 and PhreeqcRM simulator."""
         parameters = {name: value for name, value in locals().items() if name != "self"}
         self._initialize(SimulationConfig.from_legacy(parameters))
 
@@ -149,21 +144,7 @@ class mf6pqc:
         ic_map2: dict | None = None,
         fractions: ArrayLike | None = None,
     ) -> np.ndarray:
-        """
-        Initialize chemical conditions and compute initial equilibrium.
-        Parameters
-        ----------
-        ic_map : dict
-            Mapping of module name to initial condition values.
-        ic_map2 : dict | None
-            Optional mapping for mixed initial conditions.
-        fractions : ArrayLike | None
-            Cell-wise fraction of ic_map (the first end member).
-        Returns
-        -------
-        np.ndarray
-            Initial concentrations after equilibrium.
-        """
+        """Initialize chemical conditions and compute initial equilibrium."""
         self._ensure_open()
         if self.is_setup:
             warnings.warn(
@@ -228,10 +209,16 @@ class mf6pqc:
                         "Porosity feedback is enabled, but selected output contains no "
                         "d_<mineral> headings"
                     )
-            self.initial_condition_modules = tuple(sorted({
-                name for mapping in (ic_map, ic_map2 or {})
-                for name, value in mapping.items() if np.any(np.asarray(value) >= 0)
-            }))
+            self.initial_condition_modules = tuple(
+                sorted(
+                    {
+                        name
+                        for mapping in (ic_map, ic_map2 or {})
+                        for name, value in mapping.items()
+                        if np.any(np.asarray(value) >= 0)
+                    }
+                )
+            )
             self.initial_concentrations = initial.copy()
             self.results.append(self.selected_output.copy())
             self.result_times.append(0.0)
@@ -244,17 +231,7 @@ class mf6pqc:
     def run(
         self, method: CouplingMethod | str | None = None, *, hooks: CouplingHooks | None = None
     ) -> None:
-        """
-        Advance a configured SNIA, SIA, Strang, or ThermalSNIA simulation.
-        Parameters
-        ----------
-        None
-            Uses instance configuration and state.
-        Returns
-        -------
-        None
-            Advances the simulation and stores results.
-        """
+        """Advance a configured SNIA, SIA, Strang, or ThermalSNIA simulation."""
         if method is None:
             self._run_coupling(run_standard, CouplingMethod.SNIA, hooks=hooks)
             return
@@ -266,17 +243,7 @@ class mf6pqc:
         self._run_coupling(run_standard, CouplingMethod.SNIA, hooks=hooks)
 
     def run_SIA(self, *, hooks: CouplingHooks | None = None) -> None:
-        """
-        Run the SIA coupling loop with source feedback.
-        Parameters
-        ----------
-        None
-            Uses instance configuration and state.
-        Returns
-        -------
-        None
-            Advances the simulation and stores results.
-        """
+        """Run the SIA coupling loop with source feedback."""
         self._run_coupling(run_sia, CouplingMethod.SIA, hooks=hooks)
 
     def run_Strang(self, *, hooks: CouplingHooks | None = None) -> None:
@@ -343,17 +310,7 @@ class mf6pqc:
             self._coupling_hooks = None
 
     def save_results(self, filename: str = None) -> None:
-        """
-        Save selected outputs and transport properties to disk.
-        Parameters
-        ----------
-        filename : str | None
-            Optional base filename for results.
-        Returns
-        -------
-        None
-            Writes results to output directory.
-        """
+        """Save selected outputs and transport properties to disk."""
         from mf6pqc.energy import energy_result_payload
 
         save_results(
@@ -396,17 +353,7 @@ class mf6pqc:
         )
 
     def finalize(self) -> None:
-        """
-        Finalize simulation and release resources.
-        Parameters
-        ----------
-        None
-            Uses instance configuration and state.
-        Returns
-        -------
-        None
-            Closes MODFLOW 6 and PhreeqcRM resources.
-        """
+        """Finalize simulation and release resources."""
         if self._modflow_finalized and self._chemistry_finalized:
             return
         _logger.info("--- Finalizing simulation, releasing resources ---")
@@ -459,31 +406,11 @@ class mf6pqc:
         return False
 
     def get_components(self) -> list:
-        """
-        Retrieve reactive component names.
-        Parameters
-        ----------
-        None
-            Uses the internal PhreeqcRM object.
-        Returns
-        -------
-        list
-            List of component names.
-        """
+        """Retrieve reactive component names."""
         return list(self.components)
 
     def get_initial_concentrations(self, number: float) -> np.ndarray:
-        """
-        Retrieve boundary concentration for a single value.
-        Parameters
-        ----------
-        number : float
-            Value used to create a boundary concentration.
-        Returns
-        -------
-        np.ndarray
-            Boundary concentration vector.
-        """
+        """Retrieve boundary concentration for a single value."""
         self._ensure_open()
         number = require_integer("solution number", number, minimum=0)
         bc1 = np.full(1, number, dtype=np.int32)

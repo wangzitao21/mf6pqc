@@ -3,14 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import flopy
 import numpy as np
-from example_utils import boundary_values, component_fields, executable_path
 
 from mf6pqc.utils import get_gwt_model_name
 
@@ -44,12 +40,16 @@ def build_model(
     """Build and write the MODFLOW 6 inputs and return the unrun simulation."""
     workspace = Path(workspace).expanduser().resolve()
     species = list(species)
+    if len(set(species)) != len(species):
+        raise ValueError("Component names must be unique")
     nxyz = nrow * ncol
-    initial_fields = component_fields(species, initial_concentrations, nxyz)
-    pulse_concentrations = boundary_values(species, pulse_concentrations)
-    background_concentrations = boundary_values(species, background_concentrations)
+    initial_fields = dict(
+        zip(species, np.asarray(initial_concentrations).reshape(len(species), nxyz), strict=True)
+    )
+    pulse_concentrations = np.asarray(pulse_concentrations).reshape(len(species))
+    background_concentrations = np.asarray(background_concentrations).reshape(len(species))
     if mf6_executable is None:
-        mf6_executable = executable_path()
+        mf6_executable = "mf6"
     if len(logical_steps_per_period) != 2 or any(steps <= 0 for steps in logical_steps_per_period):
         raise ValueError("logical_steps_per_period must contain two positive values")
     delr = length / ncol
@@ -85,15 +85,7 @@ def build_model(
         linear_acceleration="BICGSTAB",
     )
     simulation.register_ims_package(flow_ims, [gwf.name])
-    discretization = dict(
-        nlay=1,
-        nrow=nrow,
-        ncol=ncol,
-        delr=delr,
-        delc=delc,
-        top=top,
-        botm=botm,
-    )
+    discretization = dict(nlay=1, nrow=nrow, ncol=ncol, delr=delr, delc=delc, top=top, botm=botm)
     flopy.mf6.ModflowGwfdis(gwf, **discretization)
     initial_head = np.tile(np.linspace(inlet_head, outlet_head, ncol), (nrow, 1))
     flopy.mf6.ModflowGwfic(gwf, strt=initial_head)

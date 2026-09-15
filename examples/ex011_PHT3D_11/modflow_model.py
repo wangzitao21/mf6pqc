@@ -3,14 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import flopy
 import numpy as np
-from example_utils import boundary_values, component_fields, executable_path
 
 from mf6pqc.utils import get_gwt_model_name
 
@@ -49,12 +45,16 @@ def build_model(
     """Build and write the MODFLOW 6 inputs and return the unrun simulation."""
     workspace = Path(workspace).expanduser().resolve()
     species = list(species)
+    if len(set(species)) != len(species):
+        raise ValueError("Component names must be unique")
     nxyz = nlay * nrow * ncol
-    initial_fields = component_fields(species, initial_concentrations, nxyz)
-    ambient_concentrations = boundary_values(species, ambient_concentrations)
-    recharge_concentrations = boundary_values(species, recharge_concentrations)
+    initial_fields = dict(
+        zip(species, np.asarray(initial_concentrations).reshape(len(species), nxyz), strict=True)
+    )
+    ambient_concentrations = np.asarray(ambient_concentrations).reshape(len(species))
+    recharge_concentrations = np.asarray(recharge_concentrations).reshape(len(species))
     if mf6_executable is None:
-        mf6_executable = executable_path()
+        mf6_executable = "mf6"
     if np.ndim(delr) > 0 and np.size(delr) != ncol:
         raise ValueError("Cell widths must be a scalar or match ncol")
     if np.ndim(botm) > 0 and np.size(botm) != nlay:
@@ -88,15 +88,7 @@ def build_model(
         filename="flow.ims",
     )
     simulation.register_ims_package(flow_ims, [gwf.name])
-    discretization = dict(
-        nlay=nlay,
-        nrow=nrow,
-        ncol=ncol,
-        delr=delr,
-        delc=delc,
-        top=top,
-        botm=botm,
-    )
+    discretization = dict(nlay=nlay, nrow=nrow, ncol=ncol, delr=delr, delc=delc, top=top, botm=botm)
     flopy.mf6.ModflowGwfdis(gwf, pname="dis", **discretization)
     flopy.mf6.ModflowGwfic(
         gwf, pname="ic", strt=np.full((nlay, nrow, ncol), outlet_head, dtype=float)
@@ -114,7 +106,6 @@ def build_model(
         wetdry=-0.01,
     )
     flopy.mf6.ModflowGwfsto(gwf, pname="sto", iconvert=1, ss=0.0, sy=0.0, steady_state={0: True})
-
     well_concentrations = np.zeros(len(species), dtype=float)
     left_wells = [
         [(layer, 0, 0), float(rate), *well_concentrations]

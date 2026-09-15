@@ -33,7 +33,6 @@ def advance_chemistry(backend, concentrations, start_time, time_step, temperatur
 
 
 class CheckedPhreeqcRM:
-
     def __init__(self, backend: Any) -> None:
         self.backend = backend
         self._read_cache: dict[str, Any] = {}

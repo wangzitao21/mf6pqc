@@ -2,30 +2,31 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import sys
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import numpy as np
-from ex010_PHT3D_10.modflow_model import build_model
-from example_utils import configure_logging, library_path, process_backend, runtime_path
 
-from mf6pqc import (
-    MF6PQC,
-    BackendPaths,
-    CellFields,
-    ChemistryOptions,
-    FeedbackOptions,
-    OutputOptions,
-    SimulationConfig,
+from examples.ex010_PHT3D_10.modflow_model import build_model
+from mf6pqc import MF6PQC, BackendPaths, CellFields, ProcessBackendFactory, SimulationConfig
+
+INPUT_DIR = CASE_DIR / "input_data"
+WORKSPACE = CASE_DIR / "simulation"
+OUTPUT_DIR = CASE_DIR / "output"
+MODFLOW_LIBRARY = Path(
+    os.environ.get(
+        "MF6PQC_LIBMF6",
+        CASE_DIR.parents[1]
+        / "bin"
+        / "mf6.8.0"
+        / {"win32": "libmf6.dll", "darwin": "libmf6.dylib"}.get(sys.platform, "libmf6.so"),
+    )
 )
 
-CASE_DIR = Path(__file__).resolve().parent
-INPUT_DIR = CASE_DIR / "input_data"
 NLAY = 1
 NROW = 40
 NCOL = 80
@@ -46,9 +47,6 @@ OUTLET_HEAD = 3.0
 
 
 def main() -> None:
-    """Configure, build, run, and save this reactive-transport benchmark."""
-    output_dir = runtime_path(__file__, "output")
-    workspace = runtime_path(__file__, "simulation")
     kinetics_mask = np.load(INPUT_DIR / "benzene_napl.npy", allow_pickle=False).ravel()
     kinetics_mask[kinetics_mask == 0.2] = 1
     kinetics_mask = kinetics_mask.astype(int)
@@ -61,35 +59,22 @@ def main() -> None:
         case_name="ex010",
         nxyz=NXYZ,
         nthreads=1,
-        backend_factory=process_backend(16),
+        backend_factory=ProcessBackendFactory(processes=min(16, os.cpu_count() or 1)),
         paths=BackendPaths(
             database=INPUT_DIR / "database.dat",
             chemistry_input=INPUT_DIR / "input.pqi",
-            modflow_library=library_path(),
-            workspace=workspace,
-            output_directory=output_dir,
+            modflow_library=MODFLOW_LIBRARY,
+            workspace=WORKSPACE,
+            output_directory=OUTPUT_DIR,
         ),
-        fields=CellFields(
-            temperature_c=25.0,
-            pressure_atm=2.0,
-            porosity=POROSITY,
-            saturation=1.0,
-            density_kg_per_litre=1.0,
-        ),
-        chemistry=ChemistryOptions(
-            print_chemistry_mask=0,
-            transport_water_component=False,
-            use_solution_density_volume=False,
-        ),
-        feedback=FeedbackOptions(update_porosity_and_k=False, update_density=False),
-        output=OutputOptions(save_interval=1),
+        fields=CellFields(porosity=POROSITY),
     )
     with MF6PQC.from_config(simulation_config) as simulator:
         initial_concentrations = simulator.setup(ic_map=ic_mapping)
         species = simulator.get_components()
         inflow_concentrations = simulator.get_initial_concentrations(0)
         build_model(
-            workspace=workspace,
+            workspace=WORKSPACE,
             species=species,
             initial_concentrations=initial_concentrations,
             inflow_concentrations=inflow_concentrations,
@@ -118,5 +103,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    configure_logging()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

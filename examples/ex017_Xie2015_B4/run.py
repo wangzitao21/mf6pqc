@@ -2,56 +2,47 @@
 
 from __future__ import annotations
 
-import argparse
 import json
+import logging
+import os
 import sys
 from pathlib import Path
 
-sys.dont_write_bytecode = True
-EXAMPLES_DIR = Path(__file__).resolve().parents[1]
-if str(EXAMPLES_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLES_DIR))
-
+CASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(CASE_DIR.parents[1]))
 import numpy as np
-from ex017_Xie2015_B4.modflow_model import build_model
-from example_utils import configure_logging, library_path, runtime_path
 
+from examples.ex017_Xie2015_B4.modflow_model import build_model
 from mf6pqc import (
     MF6PQC,
     BackendPaths,
     CellFields,
-    ChemistryOptions,
     FeedbackOptions,
     ImplicitOptions,
     KineticReaction,
     OutputOptions,
     SimulationConfig,
 )
-from mf6pqc.backends import NativeBackendFactory
 
-
-class QuietNativeBackend(NativeBackendFactory):
-    def create_phreeqcrm(self, nxyz, nthreads):
-        native = super().create_phreeqcrm(nxyz, nthreads)
-
-        class QuietRM:
-            def __getattr__(self, name):
-                return getattr(native, name)
-
-            def OpenFiles(self):
-                return 0
-
-            def CloseFiles(self):
-                return 0
-
-        return QuietRM()
+INPUT_DIR = CASE_DIR / "input_data"
+WORKSPACE = CASE_DIR / "simulation"
+OUTPUT_DIR = CASE_DIR / "output"
+MODFLOW_LIBRARY = Path(
+    os.environ.get(
+        "MF6PQC_LIBMF6",
+        CASE_DIR.parents[1]
+        / "bin"
+        / "mf6.8.0"
+        / {"win32": "libmf6.dll", "darwin": "libmf6.dylib"}.get(sys.platform, "libmf6.so"),
+    )
+)
 
 
 def schedule(years, maximum, targets):
     if not np.isfinite(years) or not np.isfinite(maximum) or min(years, maximum) <= 0:
         raise ValueError("Duration and maximum time step must be positive and finite")
     ends = sorted({v for v in [1.0, *targets, years] if 0 < v <= years})
-    periods, steps, save_steps = [], [], []
+    periods, steps, save_steps = ([], [], [])
     previous = 0.0
 
     def append_period(duration, count, multiplier):
@@ -72,7 +63,7 @@ def schedule(years, maximum, targets):
             append_period(duration, count, multiplier)
         else:
             next_step = steps[-1] / 365 * 1.12
-            ramp, count = 0.0, 0
+            ramp, count = (0.0, 0)
             while next_step < maximum and ramp + next_step < duration:
                 ramp += next_step
                 count += 1
@@ -84,17 +75,16 @@ def schedule(years, maximum, targets):
         save_steps.append(len(steps))
         previous = end
     times = np.cumsum(steps)
-
     stride = max(1, int(np.ceil(len(steps) / 300)))
     save_steps = sorted({*save_steps, *range(stride, len(steps) + 1, stride)})
-    return periods, save_steps, times
+    return (periods, save_steps, times)
 
 
-def normalize_min3p_totals(values, components, solution):
+def normalize_solution(values, components, solution):
     values = np.asarray(values, dtype=float)
     ca = values[components.index("Ca")]
     if np.any(ca <= 0):
-        raise ValueError("The MIN3P concentration conversion requires positive Ca")
+        raise ValueError("Concentration normalization requires positive Ca")
     result = values * (solution["ca+2"]["value"] / ca)
     for source, component in (
         ("ca+2", "Ca"),
@@ -109,35 +99,20 @@ def normalize_min3p_totals(values, components, solution):
             if not np.allclose(
                 result[components.index(component)], expected, rtol=1e-8, atol=1e-12
             ):
-                raise ValueError(f"Initial {component} differs from the MIN3P total")
+                raise ValueError(f"Initial {component} differs from the specified total")
     if "fe+2" in solution:
         expected = solution["fe+2"]["value"] + solution["fe+3"]["value"]
         if not np.allclose(result[components.index("Fe")], expected, rtol=1e-8, atol=1e-12):
-            raise ValueError("Initial total Fe differs from the MIN3P input")
+            raise ValueError("Initial total Fe differs from the specified input")
     return result
 
 
-def main(argv=None):
-    case = Path(__file__).resolve().parent
-    input_dir = case / "input_data"
-    parameters = json.loads((input_dir / "min3p_parameters.json").read_text())
-    parser = argparse.ArgumentParser(
-        description="Xie B4: implicit kinetic coupling",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+def main():
+    parameters = json.loads((INPUT_DIR / "min3p_parameters.json").read_text())
+    maximum = 1.0
+    periods, saves, _ = schedule(
+        parameters["final_years"], maximum, parameters["reference_times_years"]
     )
-    parser.add_argument("--method", choices=("implicit", "snia"), default="implicit")
-    parser.add_argument("--years", type=float, default=parameters["final_years"])
-    parser.add_argument(
-        "--max-step-years",
-        type=float,
-        default=1.0,
-        help="Maximum physical time step in years; verify accuracy by time refinement",
-    )
-    parser.add_argument("--threads", type=int, default=4)
-    parser.add_argument("--kinetic-atol", type=float, default=1e-6)
-    args = parser.parse_args(argv)
-    maximum = args.max_step_years if args.method == "implicit" else min(args.max_step_years, 0.001)
-    periods, saves, _ = schedule(args.years, maximum, parameters["reference_times_years"])
     n = 81
     phi = parameters["porosity"]
     conductivity = parameters["hydraulic_conductivity_m_per_s"] * 86400
@@ -158,7 +133,6 @@ def main(argv=None):
         )
         for e in entries
     )
-    workspace, output = runtime_path(__file__, "simulation"), runtime_path(__file__, "output")
     feedback = FeedbackOptions(
         update_porosity_and_k=True,
         update_diffusion=True,
@@ -172,36 +146,22 @@ def main(argv=None):
         },
     )
     config = SimulationConfig(
-        case_name=case.name,
+        case_name=CASE_DIR.name,
         nxyz=n,
-        nthreads=args.threads,
-        backend_factory=QuietNativeBackend(),
+        nthreads=4,
         paths=BackendPaths(
-            database=input_dir / "database.dat",
-            chemistry_input=input_dir / "input.pqi",
-            modflow_library=library_path(),
-            workspace=workspace,
-            output_directory=output,
+            database=INPUT_DIR / "database.dat",
+            chemistry_input=INPUT_DIR / "input.pqi",
+            modflow_library=MODFLOW_LIBRARY,
+            workspace=WORKSPACE,
+            output_directory=OUTPUT_DIR,
         ),
-        fields=CellFields(
-            temperature_c=25.0,
-            pressure_atm=1.0,
-            porosity=phi,
-            saturation=1.0,
-            density_kg_per_litre=1.0,
-            free_water_diffusion_model_units=d0,
-        ),
-        chemistry=ChemistryOptions(
-            print_chemistry_mask=0,
-            transport_water_component=False,
-            use_solution_density_volume=False,
-        ),
+        fields=CellFields(pressure_atm=1.0, porosity=phi, free_water_diffusion_model_units=d0),
         feedback=feedback,
-        output=OutputOptions(save_steps=saves, progress_interval=1000),
+        output=OutputOptions(save_steps=saves),
         implicit=ImplicitOptions(
             reactions=reactions,
             dense_limit=1024,
-            absolute_tolerance=args.kinetic_atol,
             derivative_refresh=1,
             chemical_jacobian="species",
             maximum_iterations=80,
@@ -212,11 +172,10 @@ def main(argv=None):
     )
     with MF6PQC.from_config(config) as sim:
         initial = sim.setup(ic_map={"solution": 0, "kinetics": 1})
-
-        initial = normalize_min3p_totals(
+        initial = normalize_solution(
             initial.reshape(sim.ncomps, n), sim.components, parameters["solutions"]["0"]
         )
-        inlet = normalize_min3p_totals(
+        inlet = normalize_solution(
             sim.get_initial_concentrations(1), sim.components, parameters["solutions"]["1"]
         )
         sim.phreeqc_rm.SetConcentrations(initial.ravel())
@@ -227,7 +186,6 @@ def main(argv=None):
         update_selected_output(sim)
         sim.results[0] = sim.selected_output
         initial = initial.ravel()
-
         lines = ["KINETICS_MODIFY 0"] + [f"-component {e['name']}\n-m 0" for e in entries]
         sim.phreeqc_rm.RunString(True, False, False, "\n".join(lines) + "\nEND\n")
         sim.phreeqc_rm.SetTimeStep(0)
@@ -237,7 +195,7 @@ def main(argv=None):
         update_selected_output(sim)
         sim.results[0] = sim.selected_output
         build_model(
-            workspace=workspace,
+            workspace=WORKSPACE,
             species=sim.get_components(),
             initial_concentrations=initial,
             inflow_concentrations=inlet,
@@ -262,17 +220,11 @@ def main(argv=None):
             diffusion_boundary=True,
             node_coordinates=np.linspace(0, 2, n),
         )
-        sim.run("Implicit" if args.method == "implicit" else "SNIA")
+        sim.run("Implicit")
         sim.save_results()
-        manifest_path = output / "results_manifest.json"
-        manifest = json.loads(manifest_path.read_text())
-        manifest["min3p_benchmark"] = dict(
-            parameters, max_step_years=maximum, method=args.method, native_threads=args.threads
-        )
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        print(f"B4 complete: {output}")
+        print(f"B4 complete: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":
-    configure_logging()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
