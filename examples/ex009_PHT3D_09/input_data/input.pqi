@@ -1,5 +1,5 @@
 SOLUTION 0
-    units mol/L
+    units mol/kgw
     temp 25
     pH 7.0 charge
     pe 14.0
@@ -14,7 +14,7 @@ SOLUTION 0
 END
 
 SOLUTION 1
-    units mol/L
+    units mol/kgw
     temp 25
     pH 7.0 charge
     pe 4.0

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
@@ -35,6 +34,78 @@ MODFLOW_LIBRARY = Path(
         / "mf6.8.0"
         / {"win32": "libmf6.dll", "darwin": "libmf6.dylib"}.get(sys.platform, "libmf6.so"),
     )
+)
+
+POROSITY = 0.35
+HYDRAULIC_CONDUCTIVITY = 0.000116 * 86400
+DIFFC = 1e-09 * 86400
+FINAL_YEARS = 3000
+MAXIMUM_STEP_YEARS = 1.0
+PROFILE_YEARS = (100, 1000, 3000)
+MINERAL_MOLAR_VOLUMES = {
+    "Calcite": 0.03693335793357933,
+    "Gypsum": 0.0742121551724138,
+    "Ferrihydrite": 0.023990391874270812,
+    "Jarosite": 0.154628125,
+    "Gibbsite": 0.033193063829787234,
+    "Siderite": 0.029256666666666663,
+}
+MINERALS = {
+    "Calcite": {
+        "stoichiometry": {"Ca": 1, "C": 1, "O": 3},
+        "rate_constant": 5e-08,
+        "initial_volume_fraction": 0.22,
+        "surface_exponent": 2 / 3,
+    },
+    "Gypsum": {
+        "stoichiometry": {"Ca": 1, "S": 1, "O": 6, "H": 4},
+        "rate_constant": 5e-08,
+        "initial_volume_fraction": 0.0,
+        "surface_exponent": 0,
+    },
+    "Ferrihydrite": {
+        "stoichiometry": {"Fe": 1, "O": 3, "H": 3},
+        "rate_constant": 5e-09,
+        "initial_volume_fraction": 0.0,
+        "surface_exponent": 0,
+    },
+    "Jarosite": {
+        "stoichiometry": {"K": 1, "Fe": 3, "S": 2, "O": 14, "H": 6},
+        "rate_constant": 5e-09,
+        "initial_volume_fraction": 0.0,
+        "surface_exponent": 0,
+    },
+    "Gibbsite": {
+        "stoichiometry": {"Al": 1, "O": 3, "H": 3},
+        "rate_constant": 5e-10,
+        "initial_volume_fraction": 0.05,
+        "surface_exponent": 2 / 3,
+    },
+    "Siderite": {
+        "stoichiometry": {"Fe": 1, "C": 1, "O": 3},
+        "rate_constant": 5e-09,
+        "initial_volume_fraction": 0.05,
+        "surface_exponent": 2 / 3,
+    },
+}
+SOLUTION_TOTALS = (
+    {
+        "Ca": 0.0004708717,
+        "C": 0.002192803,
+        "S": 0.000169512,
+        "Al": 2.789895e-07,
+        "K": 1e-05,
+        "Fe": 6.61792942e-06,
+    },
+    {
+        "Ca": 0.0001,
+        "C": 0.01,
+        "S": 0.1,
+        "Na": 0.09092,
+        "Al": 0.0143,
+        "K": 7.67e-05,
+        "Fe": 0.0223000114,
+    },
 )
 
 
@@ -80,64 +151,48 @@ def schedule(years, maximum, targets):
     return (periods, save_steps, times)
 
 
-def normalize_solution(values, components, solution):
+def normalize_solution(values, components, totals):
     values = np.asarray(values, dtype=float)
     ca = values[components.index("Ca")]
     if np.any(ca <= 0):
         raise ValueError("Concentration normalization requires positive Ca")
-    result = values * (solution["ca+2"]["value"] / ca)
-    for source, component in (
-        ("ca+2", "Ca"),
-        ("co3-2", "C"),
-        ("so4-2", "S"),
-        ("na+1", "Na"),
-        ("al+3", "Al"),
-        ("k+1", "K"),
-    ):
-        if source in solution and solution[source]["constraint"] != "charge":
-            expected = solution[source]["value"]
-            if not np.allclose(
-                result[components.index(component)], expected, rtol=1e-8, atol=1e-12
-            ):
-                raise ValueError(f"Initial {component} differs from the specified total")
-    if "fe+2" in solution:
-        expected = solution["fe+2"]["value"] + solution["fe+3"]["value"]
-        if not np.allclose(result[components.index("Fe")], expected, rtol=1e-8, atol=1e-12):
-            raise ValueError("Initial total Fe differs from the specified input")
+    result = values * (totals["Ca"] / ca)
+    for component, expected in totals.items():
+        if not np.allclose(result[components.index(component)], expected, rtol=1e-8, atol=1e-12):
+            raise ValueError(f"Initial {component} differs from the specified total")
     return result
 
 
 def main():
-    parameters = json.loads((INPUT_DIR / "min3p_parameters.json").read_text())
-    maximum = 1.0
-    periods, saves, _ = schedule(
-        parameters["final_years"], maximum, parameters["reference_times_years"]
-    )
+    periods, saves, _ = schedule(FINAL_YEARS, MAXIMUM_STEP_YEARS, PROFILE_YEARS)
     n = 81
-    phi = parameters["porosity"]
-    conductivity = parameters["hydraulic_conductivity_m_per_s"] * 86400
-    d0 = parameters["diffusion_m2_per_s"] * 86400
+    phi = POROSITY
+    conductivity = HYDRAULIC_CONDUCTIVITY
+    d0 = DIFFC
     widths = np.r_[0.0125, np.full(n - 2, 0.025), 0.0125]
     reactive = np.ones(n)
     reactive[[0, -1]] = 0
-    entries = parameters["minerals"]
     reactions = tuple(
         KineticReaction(
-            e["name"],
-            e["stoichiometry"],
-            reactive * e["rate_constant_mol_bulk_per_second"] * 86400,
-            surface_exponent=e["surface_exponent"],
-            minimum_amount=reactive * e["minimum_amount_mol_bulk"],
-            saturation_index_heading="SI_" + e["name"],
-            reference_amount=e["initial_amount_mol_bulk"] if e["surface_exponent"] else None,
+            name,
+            mineral["stoichiometry"],
+            reactive * mineral["rate_constant"] * 86400,
+            surface_exponent=mineral["surface_exponent"],
+            minimum_amount=reactive * 1e-10 / MINERAL_MOLAR_VOLUMES[name],
+            saturation_index_heading="SI_" + name,
+            reference_amount=(
+                mineral["initial_volume_fraction"] / MINERAL_MOLAR_VOLUMES[name]
+                if mineral["surface_exponent"]
+                else None
+            ),
         )
-        for e in entries
+        for name, mineral in MINERALS.items()
     )
     feedback = FeedbackOptions(
         update_porosity_and_k=True,
         update_diffusion=True,
         porosity_update_mask=reactive.astype(bool),
-        mineral_molar_volumes={e["name"]: e["molar_volume_l_per_mol"] for e in entries},
+        mineral_molar_volumes=MINERAL_MOLAR_VOLUMES,
         vertical_to_horizontal_k_ratio=1.0,
         fail_on_porosity_clipping=True,
         boundary_conductance_updates={
@@ -162,6 +217,7 @@ def main():
         implicit=ImplicitOptions(
             reactions=reactions,
             dense_limit=1024,
+            absolute_tolerance=1e-6,
             derivative_refresh=1,
             chemical_jacobian="species",
             maximum_iterations=80,
@@ -173,10 +229,10 @@ def main():
     with MF6PQC.from_config(config) as sim:
         initial = sim.setup(ic_map={"solution": 0, "kinetics": 1})
         initial = normalize_solution(
-            initial.reshape(sim.ncomps, n), sim.components, parameters["solutions"]["0"]
+            initial.reshape(sim.ncomps, n), sim.components, SOLUTION_TOTALS[0]
         )
         inlet = normalize_solution(
-            sim.get_initial_concentrations(1), sim.components, parameters["solutions"]["1"]
+            sim.get_initial_concentrations(1), sim.components, SOLUTION_TOTALS[1]
         )
         sim.phreeqc_rm.SetConcentrations(initial.ravel())
         sim.phreeqc_rm.SetTimeStep(0)
@@ -186,7 +242,9 @@ def main():
         update_selected_output(sim)
         sim.results[0] = sim.selected_output
         initial = initial.ravel()
-        lines = ["KINETICS_MODIFY 0"] + [f"-component {e['name']}\n-m 0" for e in entries]
+        lines = ["KINETICS_MODIFY 0"] + [
+            f"-component {name}\n-m 0" for name in MINERALS
+        ]
         sim.phreeqc_rm.RunString(True, False, False, "\n".join(lines) + "\nEND\n")
         sim.phreeqc_rm.SetTimeStep(0)
         sim.phreeqc_rm.RunCells()

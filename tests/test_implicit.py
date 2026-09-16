@@ -236,6 +236,40 @@ class ImplicitSystemTests(unittest.TestCase):
             directed = solve_directed_reactions(*args)
             np.testing.assert_allclose(directed[0], global_result[0], atol=1e-9, rtol=0)
 
+    def test_directed_blocks_refine_against_full_chemistry(self):
+        matrix = -2 * np.eye(3) + np.diag([0.5, 0.5], -1)
+        response = TransportResponse([csr_matrix(matrix)], np.ones(3), np.ones((1, 1)), 400)
+        base = np.array([[0.1, 0.2, 0.3]])
+        old = np.ones_like(base)
+        a = np.full_like(old, 0.3)
+
+        def evaluate(c, m):
+            return np.log(2 * c)
+
+        # Emulate small speciation differences between the one-cell kernel
+        # and the full backend; only the latter defines the accepted root.
+        evaluate.at_cells = lambda c, m, cells: np.log(2 * c[:, cells]) + 1e-5
+        result = solve_directed_reactions(
+            base,
+            old,
+            np.zeros_like(old),
+            1.0,
+            a,
+            np.zeros((1, 1)),
+            response,
+            evaluate,
+            np.ones(1, bool),
+            ImplicitOptions(absolute_tolerance=1e-12),
+        )
+        self.assertTrue(evaluate.directed_blocks_used)
+        # Independent linear reaction/transport equations for SR = 2*C.
+        expected_c = np.linalg.solve(matrix - 0.6 * np.eye(3), matrix @ base[0] - a[0])
+        expected_m = old + a * (2 * expected_c - 1)
+        np.testing.assert_allclose(result[0], expected_m, atol=1e-12, rtol=0)
+        np.testing.assert_allclose(result[1][0], expected_c, atol=1e-12, rtol=0)
+        residual = result[0] - old - a * np.expm1(evaluate(result[1], result[0]))
+        self.assertLessEqual(np.max(abs(residual)), 1e-12)
+
     def test_stiff_competing_precipitates_reach_trace_component_root(self):
         nu = np.array([[1.0, 1.0], [0.0, 1.0]])
         response = TransportResponse([csr_matrix([[-0.1]])] * 2, np.ones(1), nu, 400)
@@ -313,6 +347,44 @@ class ImplicitSystemTests(unittest.TestCase):
         np.testing.assert_allclose(result[0], exact, atol=1e-10, rtol=0)
         np.testing.assert_allclose(result[1][1], aqueous[1], rtol=1e-7, atol=1e-18)
         residual = matrix @ (result[1] - base).T + (nu @ ((old - result[0]) / dt)).T
+        self.assertLess(np.max(abs(residual)), 1e-11)
+
+    def test_local_augmented_trace_concentrations_preserve_mass_equations(self):
+        nu = np.array([[1.0, 1.0], [0.0, 1.0]])
+        matrix = csr_matrix([[-0.3, 0.2], [0.2, -0.3]])
+        response = TransportResponse([matrix, matrix], np.ones(2), nu, 400).local(0)
+        old = np.array([[1.0], [0.2]])
+        exact = np.array([[1.5], [0.20001]])
+        aqueous = np.array([[9.5], [1e-12]])
+        dt = 10.0
+        base = aqueous - response.apply((old - exact) / dt)[0]
+        logk = nu.T @ np.log(aqueous) - np.log1p((exact - old) / dt)
+
+        def evaluate(c, m):
+            return nu.T @ np.log(c) - logk
+
+        def tangent(c, m, directions):
+            columns = np.array([d for _, _, d in directions]).T
+            return (nu.T @ np.diag(1 / c[:, 0]) @ columns)[:, :, None]
+
+        evaluate.component_jacobian = tangent
+        evaluate.jacobian = lambda c, m: tangent(c, m, response.directions)
+        result = solve_log_reactions(
+            base,
+            old,
+            np.zeros_like(old),
+            dt,
+            np.ones_like(old),
+            np.zeros((2, 1)),
+            response,
+            evaluate,
+            np.ones(2, bool),
+            ImplicitOptions(absolute_tolerance=1e-8),
+            minimum_amounts=np.full_like(old, 1e-9),
+        )
+        np.testing.assert_allclose(result[0], exact, atol=1e-10, rtol=0)
+        np.testing.assert_allclose(result[1][1], aqueous[1], rtol=1e-7, atol=1e-18)
+        residual = -0.3 * (result[1] - base) + nu @ ((old - result[0]) / dt)
         self.assertLess(np.max(abs(residual)), 1e-11)
 
     def test_fixed_concentration_sources_are_masked_per_component(self):

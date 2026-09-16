@@ -181,8 +181,7 @@ class ExampleModelTests(unittest.TestCase):
         names = ["H", "O", "Charge", "Ca", "C", "S", "Na"]
         expected = np.array([111, 55.5, -0.02, 0.0001, 0.01, 0.2, 0.39562])
         solution = {
-            ion: {"value": expected[names.index(component)], "constraint": "free"}
-            for ion, component in (("ca+2", "Ca"), ("co3-2", "C"), ("so4-2", "S"), ("na+1", "Na"))
+            component: expected[names.index(component)] for component in ("Ca", "C", "S", "Na")
         }
         for case in discover_cases():
             runner = importlib.import_module(f"examples.{case.name}.run")

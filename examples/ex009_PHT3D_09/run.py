@@ -9,6 +9,8 @@ from pathlib import Path
 
 CASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(CASE_DIR.parents[1]))
+import numpy as np
+
 from examples.ex009_PHT3D_09.modflow_model import build_model
 from mf6pqc import MF6PQC, BackendPaths, CellFields, ProcessBackendFactory, SimulationConfig
 
@@ -61,9 +63,12 @@ def main() -> None:
             workspace=WORKSPACE,
             output_directory=OUTPUT_DIR,
         ),
-        fields=CellFields(porosity=POROSITY),
+        fields=CellFields(pressure_atm=1.0, porosity=POROSITY),
     )
     with MF6PQC.from_config(simulation_config) as simulator:
+        # Normalize the reaction cell to 1 L of pore water.
+        simulator.phreeqc_rm.SetUnitsKinetics(1)
+        simulator.phreeqc_rm.SetRepresentativeVolume(np.full(NXYZ, 1.0 / POROSITY))
         initial_concentrations = simulator.setup(ic_map=ic_mapping)
         species = simulator.get_components()
         build_model(

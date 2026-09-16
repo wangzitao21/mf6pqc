@@ -799,6 +799,10 @@ class TransportResponse:
         result.directions = self.directions
         result.direction_matrix = self.direction_matrix
         result.group_directions = self.group_directions
+        result.groups = [
+            (matrix[cell : cell + 1, cell : cell + 1], indices) for matrix, indices in self.groups
+        ]
+        result.group_volumes = [v[cell : cell + 1] for v in self.group_volumes]
         result.responses = [
             np.array([[-v[cell] / matrix[cell, cell]]])
             for v, (matrix, _) in zip(self.group_volumes, self.groups, strict=True)
@@ -1087,6 +1091,7 @@ def _solve_log_reactions(
             return m, c, derivative, iteration + 1, float(np.max(abs(physical)))
         if (
             not augmented_attempted
+            and transport.n > 1
             and iteration >= 4
             and np.max(abs(physical) / scale) < 1e3
             and hasattr(evaluate, "component_jacobian")
@@ -1215,11 +1220,13 @@ def _solve_log_reactions(
                 f"Logarithmic implicit line search failed (molar residual {np.max(abs(physical)):g})"
             )
             error.mineral_guess = m.copy()
+            error.concentrations_guess = c.copy()
             raise error
     error = ConvergenceError(
         f"Logarithmic implicit reactions did not converge (molar residual {np.max(abs(physical)):g})"
     )
     error.mineral_guess = m.copy()
+    error.concentrations_guess = c.copy()
     raise error
 
 
@@ -1409,7 +1416,18 @@ def solve_log_reactions(*args, **kwargs):
     """Continue reaction strength if the full nonlinear step needs a safer start."""
     try:
         return _solve_log_reactions(*args, **kwargs)
-    except ConvergenceError:
+    except ConvergenceError as error:
+        # A stalled one-cell solve may need independent trace concentrations
+        # to avoid cancellation in the mineral-to-aqueous transport response.
+        if args[6].n == 1 and hasattr(error, "mineral_guess"):
+            refined = solve_augmented(
+                args,
+                kwargs,
+                mineral_guess=error.mineral_guess,
+                concentrations_guess=error.concentrations_guess,
+            )
+            if refined is not None:
+                return refined
         predicted = _block_start(args, kwargs)
         if predicted is None:
             predicted = _coordinate_start(args, kwargs)
@@ -1513,7 +1531,7 @@ def solve_directed_reactions(
     evaluate.directed_blocks_used = True
     c = base.copy()
     mineral = old_m.copy()
-    maximum_iterations, max_residual = 0, 0.0
+    maximum_iterations = 0
     for i in order:
         local_base = base[:, i : i + 1].copy()
         for matrix, indices in transport.groups:
@@ -1536,13 +1554,14 @@ def solve_directed_reactions(
 
         if hasattr(evaluate, "jacobian_at_cells"):
 
-            def local_jacobian(lc, lm, i=i, local_transport=local_transport):
+            def local_jacobian(lc, lm, directions=local_transport.directions, i=i):
                 trial_c, trial_m = c.copy(), mineral.copy()
                 trial_c[:, i] = lc[:, 0]
                 trial_m[:, i] = lm[:, 0]
-                return evaluate.jacobian_at_cells(trial_c, trial_m, [i], local_transport.directions)
+                return evaluate.jacobian_at_cells(trial_c, trial_m, [i], directions)
 
             local_evaluate.jacobian = local_jacobian
+            local_evaluate.component_jacobian = local_jacobian
         result = solve_log_reactions(
             local_base,
             old_m[:, i : i + 1],
@@ -1558,8 +1577,36 @@ def solve_directed_reactions(
         )
         mineral[:, i : i + 1], c[:, i : i + 1] = result[:2]
         maximum_iterations = max(maximum_iterations, result[3])
-        max_residual = max(max_residual, result[4])
-    return mineral, c, None, maximum_iterations, max_residual
+        evaluate.augmented_iterations = getattr(evaluate, "augmented_iterations", 0) + getattr(
+            local_evaluate, "augmented_iterations", 0
+        )
+    # Local kernels can differ slightly from the complete chemistry state.
+    # Check the original kinetic equation before accepting their solution.
+    old_u = old_m ** (1 - exponent)
+    minimum_u = 0 if minimum_amounts is None else minimum_amounts ** (1 - exponent)
+    log_sr = evaluate(c, mineral)
+    target = np.maximum(minimum_u, old_u + dt * a * np.expm1(np.minimum(log_sr, 700)))
+    target[(old_m == 0) & (exponent > 0)] = 0
+    residual = mineral ** (1 - exponent) - target
+    scale = options.absolute_tolerance + options.relative_tolerance * abs(old_u)
+    if np.max(abs(residual) / scale) <= 1:
+        return mineral, c, None, maximum_iterations, float(np.max(abs(residual)))
+    # Refine a failed check with the original transport response and full
+    # PHREEQC residual, using the block solution as the initial guess.
+    result = solve_log_reactions(
+        base,
+        old_m,
+        (old_m - mineral) / dt,
+        dt,
+        a,
+        exponent,
+        transport,
+        evaluate,
+        nonnegative,
+        options,
+        minimum_amounts=minimum_amounts,
+    )
+    return (*result[:3], maximum_iterations + result[3], result[4])
 
 
 def solve_augmented(args, kwargs, mineral_guess=None, concentrations_guess=None):
@@ -1567,7 +1614,7 @@ def solve_augmented(args, kwargs, mineral_guess=None, concentrations_guess=None)
     from scipy.sparse.linalg import spsolve
 
     base, old, previous_rate, dt, a, exponent, transport, evaluate, nonnegative, options = args
-    if transport.n == 1 or not hasattr(evaluate, "component_jacobian"):
+    if not hasattr(evaluate, "component_jacobian"):
         return None
     components = np.flatnonzero(np.any(transport.nu != 0, axis=1))
     if not np.all(nonnegative[components]):

@@ -1,4 +1,3 @@
-# Generated from the supplied MIN3P benchmark database; see min3p_parameters.json.
 # Only the original aqueous network is enabled. Temperature: 25 C.
 SOLUTION_MASTER_SPECIES
 H H+ -1 H 1.008

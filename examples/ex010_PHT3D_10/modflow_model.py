@@ -147,13 +147,21 @@ def build_model(
         flopy.mf6.ModflowGwtdis(gwt, idomain=1, filename=f"{gwt_name}.dis", **discretization)
         flopy.mf6.ModflowGwtic(gwt, strt=concentration, filename=f"{gwt_name}.ic")
         flopy.mf6.ModflowGwtadv(gwt, scheme="TVD", filename=f"{gwt_name}.adv")
-        flopy.mf6.ModflowGwtdsp(
-            gwt, xt3d_off=True, alh=alh, ath1=ath1, diffc=diffc, filename=f"{gwt_name}.dsp"
-        )
+        flopy.mf6.ModflowGwtdsp(gwt, alh=alh, ath1=ath1, diffc=diffc, filename=f"{gwt_name}.dsp")
         flopy.mf6.ModflowGwtmst(gwt, porosity=porosity, filename=f"{gwt_name}.mst")
         sourcerecarray = [("chd-1", "AUX", species_name)]
         flopy.mf6.ModflowGwtssm(
             gwt, pname=f"{species_name}_ssm", sources=sourcerecarray, filename=f"{gwt_name}.ssm"
+        )
+        flopy.mf6.ModflowGwtcnc(
+            gwt,
+            stress_period_data={
+                0: [
+                    ((0, row, 0), inflow_concentrations[species.index(species_name)])
+                    for row in range(nrow)
+                ]
+            },
+            filename=f"{gwt_name}.cnc",
         )
         flopy.mf6.ModflowGwtoc(
             gwt,

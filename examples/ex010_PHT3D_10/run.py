@@ -41,7 +41,7 @@ BOTM = 0.0
 TSMULT = 1.0
 ALH = 0.5
 ATH1 = 0.1
-DIFFC = 0.0
+DIFFC = 3e-10
 INLET_HEAD = 5.0
 OUTLET_HEAD = 3.0
 
@@ -67,7 +67,7 @@ def main() -> None:
             workspace=WORKSPACE,
             output_directory=OUTPUT_DIR,
         ),
-        fields=CellFields(porosity=POROSITY),
+        fields=CellFields(pressure_atm=1.0, porosity=POROSITY),
     )
     with MF6PQC.from_config(simulation_config) as simulator:
         initial_concentrations = simulator.setup(ic_map=ic_mapping)

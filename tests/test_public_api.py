@@ -27,6 +27,7 @@ from mf6pqc.runtime import RunStatus
 class FakeChemistry:
     def __init__(self, nxyz: int) -> None:
         self.nxyz = nxyz
+        self.opened = 0
         self.closed = 0
         self.broken = 0
 
@@ -40,7 +41,7 @@ class FakeChemistry:
         raise AttributeError(name)
 
     def OpenFiles(self) -> None:
-        pass
+        self.opened += 1
 
     def FindComponents(self) -> int:
         return 1
@@ -137,6 +138,26 @@ class PublicApiTests(unittest.TestCase):
         ).to_legacy_kwargs()
         self.assertTrue(thermal["energy_enabled"])
         self.assertTrue(thermal["vsc_enabled"])
+
+    def test_chemistry_files_are_opened_only_when_printing_is_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "database.dat"
+            chemistry_input = root / "input.pqi"
+            database.touch()
+            chemistry_input.touch()
+            for mask in (0, [0, 1]):
+                with self.subTest(mask=mask):
+                    factory = FakeFactory()
+                    with MF6PQC(
+                        nxyz=2,
+                        db_path=database,
+                        pqi_path=chemistry_input,
+                        output_dir=root,
+                        print_chemistry_mask=mask,
+                        backend_factory=factory,
+                    ):
+                        self.assertEqual(factory.chemistry.opened, int(np.any(mask)))
 
     def test_fake_backend_supports_transactional_setup_and_idempotent_finalize(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

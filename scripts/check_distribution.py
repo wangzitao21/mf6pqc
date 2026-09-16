@@ -8,12 +8,23 @@ from email.parser import BytesParser
 from pathlib import Path
 
 
+def is_documentation(name: str) -> bool:
+    path = Path(name)
+    return (
+        path.suffix.lower() in {".md", ".rst", ".pdf", ".html", ".htm", ".doc", ".docx", ".rtf"}
+        or path.name.upper().startswith(("README", "CHANGELOG", "CONTRIBUTING", "CITATION"))
+        or bool({"docs", ".github"}.intersection(path.parts))
+    )
+
+
 def check_distribution(directory: Path) -> None:
     wheels, sources = list(directory.glob("*.whl")), list(directory.glob("*.tar.gz"))
     if len(wheels) != 1 or len(sources) != 1:
         raise AssertionError("Expected exactly one wheel and one source archive")
     with zipfile.ZipFile(wheels[0]) as wheel:
         names = wheel.namelist()
+        if any(is_documentation(name) for name in names):
+            raise AssertionError("Wheel contains documentation")
         metadata = BytesParser().parsebytes(
             wheel.read(next(n for n in names if n.endswith(".dist-info/METADATA")))
         )
@@ -34,11 +45,11 @@ def check_distribution(directory: Path) -> None:
         metadata = BytesParser().parsebytes(source.extractfile(members["PKG-INFO"]).read())
         if (metadata["Name"], metadata["Version"]) != (package, version):
             raise AssertionError("Wheel and source metadata differ")
-        required = runtime_files | {"README.md", "LICENSE", "pyproject.toml"}
+        required = runtime_files | {"LICENSE", "pyproject.toml"}
         root = Path(__file__).resolve().parents[1]
         for folder in ("examples", "scripts", "tests"):
             for path in (root / folder).rglob("*"):
-                if path.is_file() and not {
+                if path.is_file() and not is_documentation(path.relative_to(root).as_posix()) and not {
                     "output",
                     "simulation",
                     "__pycache__",
@@ -48,6 +59,8 @@ def check_distribution(directory: Path) -> None:
         if missing := required - members.keys():
             raise AssertionError(f"Source archive is missing {sorted(missing)}")
         for name in members:
+            if is_documentation(name):
+                raise AssertionError(f"Source archive contains documentation: {name}")
             parts = Path(name).parts
             if {"__pycache__", ".ipynb_checkpoints", "bin", "cases", "tmp"}.intersection(parts):
                 raise AssertionError(f"Unwanted source file: {name}")

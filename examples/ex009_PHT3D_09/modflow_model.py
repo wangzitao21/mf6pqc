@@ -92,10 +92,10 @@ def build_model(
         pname="npf",
         save_flows=True,
         save_specific_discharge=True,
-        icelltype=1,
+        icelltype=0,
         k=hydraulic_conductivity,
     )
-    flopy.mf6.ModflowGwfsto(gwf, pname="sto", iconvert=1, ss=0.0, sy=0.0, steady_state={0: True})
+    flopy.mf6.ModflowGwfsto(gwf, pname="sto", iconvert=0, ss=0.0, sy=0.0, steady_state={0: True})
     left_chd = [[(0, row, 0), inlet_head, *background_concentrations] for row in range(nrow)]
     flopy.mf6.ModflowGwfchd(
         gwf,
@@ -132,11 +132,11 @@ def build_model(
         transport_ims = flopy.mf6.ModflowIms(
             simulation,
             print_option="SUMMARY",
-            outer_dvclose=1e-06,
+            outer_dvclose=1e-10,
             outer_maximum=50,
             inner_maximum=100,
-            inner_dvclose=1e-06,
-            rcloserecord=1e-06,
+            inner_dvclose=1e-12,
+            rcloserecord=1e-9,
             linear_acceleration="BICGSTAB",
             relaxation_factor=0.97,
             filename=f"{gwt_name}.ims",
@@ -153,6 +153,16 @@ def build_model(
             gwt,
             sources=[("WEL-1", "AUX", species_name), ("CHD-LEFT", "AUX", species_name)],
             filename=f"{gwt_name}.ssm",
+        )
+        flopy.mf6.ModflowGwtcnc(
+            gwt,
+            stress_period_data={
+                0: [
+                    ((0, row, 0), background_concentrations[species.index(species_name)])
+                    for row in range(nrow)
+                ]
+            },
+            filename=f"{gwt_name}.cnc",
         )
         flopy.mf6.ModflowGwtoc(
             gwt,

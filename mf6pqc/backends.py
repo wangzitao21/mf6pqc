@@ -236,8 +236,9 @@ def initialize_phreeqcrm(sim) -> None:
         sim.phreeqc_rm = chemistry
         prefix = os.path.join(output_dir, f"{sim.case_name}_prm")
         chemistry.SetFilePrefix(prefix)
-        chemistry.OpenFiles()
-        files_open = True
+        if sim.print_chemistry_mask.any():
+            chemistry.OpenFiles()
+            files_open = True
         chemistry.SetUnitsSolution(PHREEQCRM_UNITS["solution"])
         chemistry.SetUnitsPPassemblage(PHREEQCRM_UNITS["ppassemblage"])
         chemistry.SetUnitsExchange(PHREEQCRM_UNITS["exchange"])

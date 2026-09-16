@@ -1,10 +1,10 @@
-include README.md LICENSE pyproject.toml requirements.txt
+include LICENSE pyproject.toml requirements.txt
 recursive-include mf6pqc *.py py.typed
 prune docs
 exclude CONTRIBUTING.md CHANGELOG.md CITATION.cff
 recursive-include tests *.py
 recursive-include scripts *.py
-recursive-include examples *.py *.ipynb *.pqi *.dat *.npz *.npy *.csv *.txt *.md *.json
+recursive-include examples *.py *.ipynb *.pqi *.dat *.npz *.npy *.csv *.txt *.json
 prune examples/*/output
 prune examples/*/simulation
 prune examples/*/__pycache__
@@ -20,4 +20,6 @@ global-exclude */.ipynb_checkpoints/*
 prune trash
 prune .venv-verify
 
-recursive-include .github/assets *.png
+prune .github
+global-exclude *.md *.rst *.pdf *.html *.htm *.doc *.docx *.rtf
+global-exclude README* CHANGELOG* CONTRIBUTING* CITATION*

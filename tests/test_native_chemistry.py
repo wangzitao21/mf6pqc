@@ -43,6 +43,7 @@ class NativeCellIsolationTests(unittest.TestCase):
                 sim.phreeqc_rm.advance(concentrations, step * 43200.0, 43200.0)
                 concentrations = sim.phreeqc_rm.GetConcentrations()
                 outputs.append(sim.phreeqc_rm.GetSelectedOutput().reshape(-1, len(mapping)))
+            self.assertEqual(list(Path(temporary).glob("*_prm*")), [])
             return np.stack(outputs), concentrations.reshape(-1, len(mapping))
 
     def test_rates_are_independent_of_cell_order_and_process_partition(self):
