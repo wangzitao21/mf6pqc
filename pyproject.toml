@@ -1,0 +1,92 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mf6pqc"
+dynamic = ["version"]
+description = "A modular MODFLOW 6–PhreeqcRM framework for variable-density reactive transport with evolving porosity and hydraulic conductivity"
+requires-python = ">=3.11"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [
+  {name = "Zitao Wang", email = "zitao.wang@aust.edu.cn"},
+]
+keywords = [
+  "groundwater",
+  "hydrogeology",
+  "MODFLOW 6",
+  "PhreeqcRM",
+  "reactive transport",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Hydrology",
+]
+dependencies = [
+  "numpy>=1.26,<3",
+  "scipy>=1.12,<2",
+  "modflowapi>=1.0.1,<2",
+  "phreeqcrm==0.0.17",
+]
+
+[project.optional-dependencies]
+examples = [
+  "flopy>=3.9,<4",
+  "pandas>=2.0,<3",
+  "matplotlib>=3.7,<4",
+  "seaborn>=0.12,<1",
+  "gstools>=1.6,<2",
+  "jupyterlab>=4,<5",
+  "nbformat>=5.9,<6",
+]
+test = [
+  "coverage>=7.6,<8",
+]
+dev = [
+  "build>=1.2,<2",
+  "coverage>=7.6,<8",
+  "ruff>=0.16,<1",
+  "twine>=6,<8",
+]
+
+[project.urls]
+Repository = "https://github.com/wangzitao21/mf6pqc"
+Issues = "https://github.com/wangzitao21/mf6pqc/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "mf6pqc._version.__version__"}
+
+[tool.setuptools.package-data]
+mf6pqc = ["py.typed"]
+
+[tool.setuptools]
+packages = ["mf6pqc", "mf6pqc.coupling"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Executable source-tree examples bootstrap their import path explicitly.
+"examples/**/*.py" = ["E402"]
+"examples/**/*.ipynb" = ["E402"]
+# Preserve the historical enum string representation.
+"mf6pqc/coupling/__init__.py" = ["UP042"]
+
+[tool.coverage.run]
+source = ["mf6pqc"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

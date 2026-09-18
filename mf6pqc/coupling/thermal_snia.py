@@ -1,0 +1,92 @@
+"""Explicit GWF-GWT-GWE-VSC sequential non-iterative coupling."""
+
+from __future__ import annotations
+
+import logging
+import time
+
+from mf6pqc.backends import initialize_modflow6
+from mf6pqc.coupling.common import (
+    StandardCouplingState,
+    advance_to_end,
+    build_standard_state,
+    cache_basic_geometry,
+    commit_reaction_concentrations,
+    enforce_component_domains,
+    finalize_results,
+    get_calculated_density,
+    get_coupling_time_step,
+    read_concentrations_from_modflow,
+    run_reaction_step,
+    save_time_step_results,
+    solve_modflow_solutions,
+    update_selected_output,
+    validate_setup,
+)
+from mf6pqc.energy import (
+    capture_flow_inputs,
+    capture_flow_response,
+    setup_energy_coupling,
+)
+from mf6pqc.exceptions import ConfigurationError
+from mf6pqc.feedback import update_medium_properties, write_conductivity_for_step
+
+_logger = logging.getLogger(__name__)
+
+
+def thermal_time_step(sim, state: StandardCouplingState) -> None:
+    """Advance one explicit flow/transport/energy/reaction step.
+
+    The current GWE temperature and reaction-updated reference K feed the flow
+    solve.  GWE then advances temperature, and that new temperature is sent to
+    PhreeqcRM for the reaction calculation.  As with ordinary SNIA, feedback
+    produced at the end of a step is used by flow in the following step.
+    """
+    dt = get_coupling_time_step(state)
+    reaction_start_time = state.current_time
+    sim.modflow_api.prepare_time_step(dt)
+    capture_flow_inputs(sim, state.current_k11)
+    write_conductivity_for_step(sim, state.current_k11, state.logical_step)
+    density = get_calculated_density(sim) if sim.if_update_density else None
+    solve_modflow_solutions(sim, state, density)
+    capture_flow_response(sim)
+    sim.modflow_api.finalize_time_step()
+    state.current_time = float(sim.modflow_api.get_current_time())
+
+    read_concentrations_from_modflow(
+        state.concentration_variables, state.species_slices, state.transported
+    )
+    enforce_component_domains(
+        state.transported,
+        sim.components,
+        state.species_slices,
+        sim.signed_components,
+        nonnegative_slices=getattr(state, "nonnegative_slices", None),
+    )
+    # run_reaction_step synchronizes the post-GWE temperature before RunCells.
+    run_reaction_step(sim, state.transported, state.reacted, reaction_start_time, dt)
+    update_selected_output(sim)
+    state.current_k11 = update_medium_properties(sim, state.current_k11, state.logical_step)
+    commit_reaction_concentrations(sim, state)
+    save_time_step_results(
+        sim, state.logical_step, state.current_time, current_k11=state.current_k11
+    )
+    state.logical_step += 1
+
+
+def run_thermal_snia(sim) -> None:
+    """Run the opt-in explicit GWE/VSC reactive-transport algorithm."""
+    validate_setup(sim)
+    if not sim.energy_enabled:
+        raise ConfigurationError("ThermalSNIA requires energy_enabled=True and a MODFLOW GWE model")
+    initialize_modflow6(sim)
+    _logger.info("\n--- Starting reactive transport simulation (ThermalSNIA) ---")
+    start = time.perf_counter()
+    cache_basic_geometry(sim)
+    setup_energy_coupling(sim)
+    state = build_standard_state(sim)
+    advance_to_end(sim, state, thermal_time_step)
+    finalize_results(sim, state.logical_step, start)
+
+
+__all__ = ["run_thermal_snia", "thermal_time_step"]

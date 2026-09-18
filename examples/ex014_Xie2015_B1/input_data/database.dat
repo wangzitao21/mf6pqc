@@ -1,0 +1,79 @@
+# B1 subset transcribed from the supplied MIN3P comp.dbs, complex.dbs and
+# mineral.dbs: four primary components, ten secondary aqueous complexes and
+# calcite. Constants below are at 25 C; reaction directions are written in
+# PHREEQC syntax. Do not enable the unrelated carbon/sulfur redox pathways in
+# the full phreeqc.dat database for this benchmark.
+# H2/O2 definitions are required by PHREEQC's H/O master-species bookkeeping;
+# they are not additional imposed gas phases or boundary components.
+SOLUTION_MASTER_SPECIES
+H H+ -1 H 1.008
+H(1) H+ -1 H
+H(0) H2 0 H
+E e- 0 0 0
+O H2O 0 O 15.999
+O(-2) H2O 0 O
+O(0) O2 0 O
+Ca Ca+2 0 Ca 40.080
+C CO3-2 2 HCO3 12.0114
+C(4) CO3-2 2 HCO3
+S SO4-2 0 SO4 32.064
+S(6) SO4-2 0 SO4
+Alkalinity CO3-2 1 Ca0.5(CO3)0.5 50.0447
+SOLUTION_SPECIES
+H+ = H+
+    -gamma 9.0 0.0
+e- = e-
+H2O = H2O
+2 H+ + 2 e- = H2
+    -log_k -3.15
+2 H2O = O2 + 4 H+ + 4 e-
+    -log_k -86.08
+Ca+2 = Ca+2
+    -gamma 6.0 0.17
+CO3-2 = CO3-2
+    -gamma 5.4 0.0
+SO4-2 = SO4-2
+    -gamma 4.0 -0.04
+H2O = OH- + H+
+    -log_k -13.998
+    -delta_h 13.362 kcal
+    -gamma 3.5 0.0
+SO4-2 + 2 H+ = H2SO4
+    -log_k -1.0209
+    -gamma 0.0 0.1
+Ca+2 + H2O = CaOH+ + H+
+    -log_k -12.780
+    -delta_h 14.535 kcal
+    -gamma 6.0 0.0
+Ca+2 + CO3-2 + H+ = CaHCO3+
+    -log_k 11.440
+    -delta_h 5.410 kcal
+    -gamma 6.0 0.0
+Ca+2 + CO3-2 = CaCO3
+    -log_k 3.220
+    -delta_h 4.030 kcal
+    -gamma 0.0 0.1
+Ca+2 + SO4-2 = CaSO4
+    -log_k 2.309
+    -delta_h 1.470 kcal
+    -gamma 0.0 0.1
+Ca+2 + H+ + SO4-2 = CaHSO4+
+    -log_k 3.068
+CO3-2 + H+ = HCO3-
+    -log_k 10.330
+    -delta_h -3.617 kcal
+    -gamma 5.4 0.0
+CO3-2 + 2 H+ = H2CO3
+    -log_k 16.681
+    -delta_h -2.247 kcal
+    -gamma 0.0 0.1
+SO4-2 + H+ = HSO4-
+    -log_k 1.987
+    -delta_h 3.850 kcal
+    -gamma 4.5 0.0
+PHASES
+Calcite
+    CaCO3 = Ca+2 + CO3-2
+    -log_k -8.475
+    -delta_h -2.585 kcal
+END

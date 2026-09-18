@@ -1,0 +1,129 @@
+# MIN3P 'free' means TOTAL component concentration (manual Block 14).
+# Fixed pH is not adjusted for charge balance; initial B3/B4 Na is.
+KNOBS
+    -convergence_tolerance 1e-12
+    -iterations 300
+END
+SOLUTION 0
+    units mol/kgw
+    temp 25
+    pH 8.01
+    Ca 0.0004708717
+    C(4) 0.002192803
+    S(6) 0.000169512
+    Na 0.00154 charge
+    Al 2.789895e-07
+    K 1e-05
+    Fe(2) 6.592671e-06
+    Fe(3) 2.525842e-08
+    pe -0.67
+    O(0) 3.810921435926504e-57
+END
+SOLUTION 1
+    units mol/kgw
+    temp 25
+    pH 3.0d0
+    Ca 0.0001
+    C(4) 0.01
+    S(6) 0.1
+    Na 0.09092
+    Al 0.0143
+    K 7.669999999999999e-05
+    Fe(2) 1.14e-08
+    Fe(3) 0.0223
+    pe 17.5455
+    O(0) 1 O2(g) -1
+END
+KINETICS 1
+Calcite
+    -m0 5.9566747327888869
+    -tol 1e-10
+    -parms 4.9999999999999998e-08 2.7075794239949488e-09
+Gypsum
+    -m0 1.3474881543013333e-09
+    -tol 1e-10
+    -parms 4.9999999999999998e-08 1.3474881543013333e-09
+Ferrihydrite
+    -m0 4.168335412113375e-09
+    -tol 1e-10
+    -parms 5.0000000000000001e-09 4.168335412113375e-09
+Jarosite
+    -m0 6.467128796911947e-10
+    -tol 1e-10
+    -parms 5.0000000000000001e-09 6.467128796911947e-10
+Gibbsite
+    -m0 1.5063388018773469
+    -tol 1e-10
+    -parms 5.0000000000000003e-10 3.012677603754694e-09
+Siderite
+    -m0 1.7090121909536289
+    -tol 1e-10
+    -parms 5.0000000000000001e-09 3.4180243819072583e-09
+    -cvode true
+    -cvode_steps 1000
+    -bad_step_max 1000
+END
+RATES
+Calcite
+    -start
+10 k = PARM(1)
+20 IF M > 0 THEN k = k * (M/M0)^(2/3) ELSE k = 0
+30 moles = k * (1 - SR("Calcite")) * TIME
+40 IF moles > 0 AND moles > M-PARM(2) THEN moles = M-PARM(2)
+50 SAVE moles
+    -end
+Gypsum
+    -start
+10 k = PARM(1)
+30 moles = k * (1 - SR("Gypsum")) * TIME
+40 IF moles > 0 AND moles > M-PARM(2) THEN moles = M-PARM(2)
+50 SAVE moles
+    -end
+Ferrihydrite
+    -start
+10 k = PARM(1)
+30 moles = k * (1 - SR("Ferrihydrite")) * TIME
+40 IF moles > 0 AND moles > M-PARM(2) THEN moles = M-PARM(2)
+50 SAVE moles
+    -end
+Jarosite
+    -start
+10 k = PARM(1)
+30 moles = k * (1 - SR("Jarosite")) * TIME
+40 IF moles > 0 AND moles > M-PARM(2) THEN moles = M-PARM(2)
+50 SAVE moles
+    -end
+Gibbsite
+    -start
+10 k = PARM(1)
+20 IF M > 0 THEN k = k * (M/M0)^(2/3) ELSE k = 0
+30 moles = k * (1 - SR("Gibbsite")) * TIME
+40 IF moles > 0 AND moles > M-PARM(2) THEN moles = M-PARM(2)
+50 SAVE moles
+    -end
+Siderite
+    -start
+10 k = PARM(1)
+20 IF M > 0 THEN k = k * (M/M0)^(2/3) ELSE k = 0
+30 moles = k * (1 - SR("Siderite")) * TIME
+40 IF moles > 0 AND moles > M-PARM(2) THEN moles = M-PARM(2)
+50 SAVE moles
+    -end
+END
+USER_PUNCH 1
+    -headings Calcite d_Calcite SR_Calcite SI_Calcite Gypsum d_Gypsum SR_Gypsum SI_Gypsum Ferrihydrite d_Ferrihydrite SR_Ferrihydrite SI_Ferrihydrite Jarosite d_Jarosite SR_Jarosite SI_Jarosite Gibbsite d_Gibbsite SR_Gibbsite SI_Gibbsite Siderite d_Siderite SR_Siderite SI_Siderite
+    -start
+10 PUNCH KIN("Calcite"), KIN_DELTA("Calcite"), SR("Calcite"), SI("Calcite")
+20 PUNCH KIN("Gypsum"), KIN_DELTA("Gypsum"), SR("Gypsum"), SI("Gypsum")
+30 PUNCH KIN("Ferrihydrite"), KIN_DELTA("Ferrihydrite"), SR("Ferrihydrite"), SI("Ferrihydrite")
+40 PUNCH KIN("Jarosite"), KIN_DELTA("Jarosite"), SR("Jarosite"), SI("Jarosite")
+50 PUNCH KIN("Gibbsite"), KIN_DELTA("Gibbsite"), SR("Gibbsite"), SI("Gibbsite")
+60 PUNCH KIN("Siderite"), KIN_DELTA("Siderite"), SR("Siderite"), SI("Siderite")
+    -end
+END
+SELECTED_OUTPUT 1
+    -reset false
+    -high_precision true
+PRINT
+    -warnings 0
+END

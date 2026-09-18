@@ -1,0 +1,25 @@
+include LICENSE pyproject.toml requirements.txt
+recursive-include mf6pqc *.py py.typed
+prune docs
+exclude CONTRIBUTING.md CHANGELOG.md CITATION.cff
+recursive-include tests *.py
+recursive-include scripts *.py
+recursive-include examples *.py *.ipynb *.pqi *.dat *.npz *.npy *.csv *.txt *.json
+prune examples/*/output
+prune examples/*/simulation
+prune examples/*/__pycache__
+include examples/*/output/.gitkeep
+include examples/*/simulation/.gitkeep
+prune cases
+prune references
+prune bin
+prune .release-checks
+prune .venv
+global-exclude __pycache__ *.py[cod] .DS_Store
+global-exclude */.ipynb_checkpoints/*
+prune trash
+prune .venv-verify
+
+prune .github
+global-exclude *.md *.rst *.pdf *.html *.htm *.doc *.docx *.rtf
+global-exclude README* CHANGELOG* CONTRIBUTING* CITATION*

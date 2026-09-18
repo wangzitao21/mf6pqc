@@ -1,0 +1,59 @@
+SOLUTION 0
+    units       mol/L
+    # Preserve mol/L during PhreeqcRM's initial-solution volume conversion.
+    density     1 calculate
+    # MIN3P 'ph' fixes pH; 'free' specifies total aqueous components.
+    pH          9.375
+    Ca          1.566e-4
+    C(4)        2.566e-4
+    S(6)        1e-10
+END
+SOLUTION 1
+    units       mol/L
+    density     1 calculate
+    pH          3.0
+    Ca          1e-4
+    C(4)        1e-2
+    S(6)        6.457e-4
+END
+KINETICS 1
+Calcite
+    # 0.30 / (100.0894 / 2710), mol per litre of bulk porous medium.
+	-m0     8.122738271984845
+	-parms  5e-8
+END
+RATES 1
+Calcite
+	-start
+	10 k0 = PARM(1)
+	30 IF M > 0 THEN k_t = k0 * (M/M0)^(2/3) ELSE k_t = 0
+	80 moles = k_t * (1 - SR("Calcite")) * TIME
+	110 SAVE moles
+	-end
+END
+USER_PUNCH 1
+    # Retain the original Calcite/d_Calcite columns; append the coupling diagnostic.
+    -headings Calcite d_Calcite SR_Calcite
+    -start
+    10 PUNCH KIN("Calcite")
+    20 PUNCH KIN_DELTA("Calcite")
+    30 PUNCH SR("Calcite")
+END
+SELECTED_OUTPUT 1
+    -step false
+    -high_precision true
+    -water false
+    soln false
+    pH false
+    sim false
+    state false
+    time false
+    pe false
+    distance false
+END
+KNOBS
+    -convergence_tolerance 1e-12
+END
+PRINT
+    -warnings 0
+END

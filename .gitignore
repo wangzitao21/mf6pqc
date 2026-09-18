@@ -1,0 +1,34 @@
+# Local research, native binaries, and release checks
+/cases/
+/bin/
+/.release-checks/
+
+# Python environments and caches
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Build and test output
+/build/
+/dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage*
+coverage.xml
+htmlcov/
+
+# Keep source-controlled lossless result archives and manuscript figures.
+# Fresh simulations expand/write numerical files locally in the same directories.
+/examples/*/simulation/*
+/examples/*/output/*
+/examples/*/output/figures/*
+/.diagnostics/
+
+/examples/*/output_original_*/
+
+/examples/*/simulation_original_*/
+tmp/

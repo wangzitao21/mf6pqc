@@ -1,0 +1,352 @@
+from __future__ import annotations
+
+import contextlib
+import logging
+import numbers
+import os
+import warnings
+from dataclasses import dataclass
+from functools import cache, wraps
+from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
+
+import numpy as np
+
+from mf6pqc.constants import (
+    PHREEQCRM_REBALANCE_FRACTION,
+    PHREEQCRM_TIME_CONVERSION,
+    PHREEQCRM_UNITS,
+)
+from mf6pqc.exceptions import BackendError, ConfigurationError
+
+_logger = logging.getLogger(__name__)
+
+
+def advance_chemistry(backend, concentrations, start_time, time_step, temperature=None):
+    if temperature is not None:
+        backend.SetTemperature(temperature)
+    backend.SetConcentrations(concentrations)
+    backend.SetTime(start_time)
+    backend.SetTimeStep(time_step)
+    backend.RunCells()
+    return backend.GetConcentrations(), backend.GetSelectedOutput()
+
+
+class CheckedPhreeqcRM:
+    def __init__(self, backend: Any) -> None:
+        self.backend = backend
+        self._read_cache: dict[str, Any] = {}
+        self._concentration_buffer = None
+
+    def __getattr__(self, name: str):
+        attribute = getattr(self.backend, name)
+        if not callable(attribute):
+            return attribute
+        if name in {"GetConcentrations", "GetSelectedOutput"}:
+
+            @wraps(attribute)
+            def read(*args, **kwargs):
+                if not args and not kwargs and name in self._read_cache:
+                    return self._read_cache.pop(name)
+                return getattr(self.backend, name)(*args, **kwargs)
+
+            setattr(self, name, read)
+            return read
+        if name.startswith("Get"):
+            return attribute
+
+        backend = self.backend
+
+        @wraps(attribute)
+        def checked(*args, **kwargs):
+            self._read_cache.clear()
+            result = attribute(*args, **kwargs)
+            if isinstance(result, numbers.Integral) and result < 0:
+                detail = ""
+                with contextlib.suppress(AttributeError, RuntimeError):
+                    detail = str(backend.GetErrorString()).strip()
+                raise BackendError(f"PhreeqcRM {name} failed (status {result}): {detail}")
+            return result
+
+        setattr(self, name, checked)
+        return checked
+
+    def advance(self, concentrations, start_time, time_step, temperature=None) -> None:
+        self._read_cache.clear()
+        advance = getattr(type(self.backend), "advance", None)
+        if advance is None:
+            reacted, selected = advance_chemistry(
+                self, concentrations, start_time, time_step, temperature
+            )
+        else:
+            reacted, selected = advance(
+                self.backend, concentrations, start_time, time_step, temperature
+            )
+        self._read_cache.update(GetConcentrations=reacted, GetSelectedOutput=selected)
+
+    def advance_into(
+        self, concentrations, start_time, time_step, reacted, selected, temperature=None
+    ):
+        self._read_cache.clear()
+        advance = getattr(type(self.backend), "advance_into", None)
+        if advance is None:
+            values, output = advance_chemistry(
+                self, concentrations, start_time, time_step, temperature
+            )
+            if np.shape(values) != reacted.shape or np.size(output) != selected.size:
+                raise BackendError("Chemistry output shape changed during reaction")
+            np.copyto(reacted, values)
+            np.copyto(selected.ravel(), np.asarray(output).ravel())
+        else:
+            advance(
+                self.backend, concentrations, start_time, time_step, reacted, selected, temperature
+            )
+        self._concentration_buffer = reacted
+        self._read_cache.update(GetConcentrations=reacted, GetSelectedOutput=selected.ravel())
+
+    def commit_porosity(self, porosity) -> None:
+        self._read_cache.clear()
+        buffer = self._concentration_buffer
+        commit_into = getattr(type(self.backend), "commit_porosity_into", None)
+        if buffer is not None and commit_into is not None:
+            commit_into(self.backend, porosity, buffer)
+            concentrations = buffer
+        else:
+            commit = getattr(type(self.backend), "commit_porosity", None)
+            if commit is None:
+                self.SetPorosity(porosity)
+                concentrations = self.backend.GetConcentrations()
+            else:
+                concentrations = commit(self.backend, porosity)
+        self._read_cache["GetConcentrations"] = concentrations
+
+
+class BatchedChemistryBackend(Protocol):
+    def advance_into(
+        self, concentrations, start_time, time_step, reacted, selected, temperature=None
+    ) -> None: ...
+    def commit_porosity_into(self, porosity, concentrations) -> None: ...
+
+
+def solve_prepared_modflow(modflow_api, solution_id, maximum):
+    converged = False
+    iterations = 0
+    try:
+        while iterations < maximum:
+            converged = bool(modflow_api.solve(solution_id))
+            iterations += 1
+            if converged:
+                break
+    finally:
+        modflow_api.finalize_solve(solution_id)
+    return converged, iterations
+
+
+@runtime_checkable
+class BackendFactory(Protocol):
+    """Construction seam for the native scientific backends."""
+
+    def create_phreeqcrm(self, nxyz: int, nthreads: int) -> Any:
+        """Create an unconfigured PhreeqcRM instance."""
+
+    def create_modflow_api(self, dll_path: str, workspace: str) -> Any:
+        """Create an uninitialized MODFLOW 6 API instance."""
+
+    def load_modflow_simulation(self, modflow_api: Any) -> Any:
+        """Load the high-level API simulation wrapper."""
+
+
+@dataclass(frozen=True, slots=True)
+class NativeBackendFactory:
+    """Default factory backed by the installed native Python packages."""
+
+    def create_phreeqcrm(self, nxyz: int, nthreads: int) -> Any:
+        warnings.filterwarnings(
+            "ignore",
+            message=r"^builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute$",
+            category=DeprecationWarning,
+        )
+        import phreeqcrm
+
+        return phreeqcrm.PhreeqcRM(nxyz, nthreads)
+
+    def create_modflow_api(self, dll_path: str, workspace: str) -> Any:
+        import modflowapi
+
+        return modflowapi.ModflowApi(dll_path, working_directory=workspace)
+
+    def load_modflow_simulation(self, modflow_api: Any) -> Any:
+        import modflowapi
+
+        read_names = modflow_api.get_input_var_names
+        modflow_api.get_input_var_names = cache(read_names)
+        try:
+            return modflowapi.extensions.ApiSimulation.load(modflow_api)
+        finally:
+            modflow_api.get_input_var_names = read_names
+
+
+def file_fingerprint(path: str | Path) -> dict[str, str | int]:
+    """Identify the exact solver input without embedding its contents in output."""
+    import hashlib
+
+    resolved = Path(path).resolve()
+    with resolved.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    return {"path": str(resolved), "sha256": digest, "size_bytes": resolved.stat().st_size}
+
+
+def _require_file(path: str | os.PathLike[str] | None, label: str) -> str:
+    if path is None:
+        raise ConfigurationError(f"{label} must be provided")
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise ConfigurationError(f"{label} does not exist or is not a file: {resolved}")
+    return str(resolved)
+
+
+def _require_directory(path: str | os.PathLike[str] | None, label: str) -> str:
+    if path is None:
+        raise ConfigurationError(f"{label} must be provided")
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_dir():
+        raise ConfigurationError(f"{label} does not exist or is not a directory: {resolved}")
+    return str(resolved)
+
+
+def initialize_phreeqcrm(sim) -> None:
+    """Create and fully configure the chemistry backend for ``sim``."""
+    _logger.info("--- Initializing PhreeqcRM ---")
+    database = _require_file(sim.db_path, "db_path")
+    chemistry_input = _require_file(sim.pqi_path, "pqi_path")
+    if sim.output_dir is None:
+        raise ConfigurationError("output_dir must be provided")
+    output_dir = str(Path(sim.output_dir).expanduser().resolve())
+    os.makedirs(output_dir, exist_ok=True)
+    sim.output_dir = output_dir
+
+    sim.input_provenance = {
+        "database": file_fingerprint(database),
+        "chemistry_input": file_fingerprint(chemistry_input),
+    }
+    chemistry = None
+    files_open = False
+    try:
+        chemistry = CheckedPhreeqcRM(sim.backend_factory.create_phreeqcrm(sim.nxyz, sim.nthreads))
+        sim.phreeqc_rm = chemistry
+        prefix = os.path.join(output_dir, f"{sim.case_name}_prm")
+        chemistry.SetFilePrefix(prefix)
+        if sim.print_chemistry_mask.any():
+            chemistry.OpenFiles()
+            files_open = True
+        chemistry.SetUnitsSolution(PHREEQCRM_UNITS["solution"])
+        chemistry.SetUnitsPPassemblage(PHREEQCRM_UNITS["ppassemblage"])
+        chemistry.SetUnitsExchange(PHREEQCRM_UNITS["exchange"])
+        chemistry.SetUnitsSurface(PHREEQCRM_UNITS["surface"])
+        chemistry.SetUnitsGasPhase(PHREEQCRM_UNITS["gas_phase"])
+        chemistry.SetUnitsSSassemblage(PHREEQCRM_UNITS["ssassemblage"])
+        chemistry.SetUnitsKinetics(PHREEQCRM_UNITS["kinetics"])
+        chemistry.SetTimeConversion(PHREEQCRM_TIME_CONVERSION)
+        chemistry.SetTemperature(sim.temperature)
+        chemistry.SetPressure(sim.pressure)
+        chemistry.SetPorosity(sim.porosity)
+        chemistry.SetSaturation(sim.saturation)
+        chemistry.SetDensityUser(sim.density)
+        chemistry.SetPrintChemistryMask(sim.print_chemistry_mask.astype("int32"))
+        chemistry.SetComponentH2O(sim.componentH2O)
+        chemistry.UseSolutionDensityVolume(sim.solution_density_volume)
+        chemistry.SetRebalanceFraction(PHREEQCRM_REBALANCE_FRACTION)
+        _logger.info(f"Loading Phreeqc database: {database}")
+        chemistry.LoadDatabase(database)
+        chemistry.SetPrintChemistryOn(bool(sim.print_chemistry_mask.any()), False, False)
+        _logger.info(f"Running chemistry definition file: {chemistry_input}")
+        chemistry.RunFile(True, True, True, chemistry_input)
+        chemistry.RunString(True, False, True, "DELETE; -all")
+        sim.ncomps = chemistry.FindComponents()
+        sim.components = list(chemistry.GetComponents())
+        if sim.ncomps != len(sim.components):
+            raise BackendError(
+                "PhreeqcRM component count does not match GetComponents(): "
+                f"{sim.ncomps} != {len(sim.components)}"
+            )
+        if not sim.components:
+            raise BackendError("PhreeqcRM did not report any transport components")
+        _logger.info(f"List of reactive chemical components: {sim.components}")
+        chemistry.SetScreenOn(False)
+        chemistry.SetSelectedOutputOn(True)
+    except BaseException as exc:
+        if chemistry is not None:
+            if files_open:
+                with contextlib.suppress(Exception):
+                    chemistry.CloseFiles()
+            with contextlib.suppress(Exception):
+                chemistry.MpiWorkerBreak()
+        sim.phreeqc_rm = None
+        if not isinstance(exc, Exception) or isinstance(exc, (ConfigurationError, BackendError)):
+            raise
+        raise BackendError(f"Failed to initialize PhreeqcRM: {exc}") from exc
+
+
+def validate_modflow_workspace(workspace: str | Path) -> None:
+    """Reject unsupported time units and adaptive stepping before native initialization."""
+    import shlex
+
+    def records(path):
+        for line in Path(path).read_text(encoding="utf-8-sig").splitlines():
+            lexer = shlex.shlex(line, posix=True)
+            lexer.whitespace_split = True
+            lexer.escape = ""  # Preserve Windows paths inside MODFLOW input.
+            tokens = list(lexer)
+            if tokens:
+                yield tokens
+
+    workspace = Path(workspace)
+    namefile = workspace / "mfsim.nam"
+    if not namefile.is_file():
+        raise ConfigurationError(f"MODFLOW simulation name file is missing: {namefile}")
+    tdis_files = [row[1] for row in records(namefile) if row[0].upper() == "TDIS6" and len(row) > 1]
+    if len(tdis_files) != 1:
+        raise ConfigurationError("mfsim.nam must define exactly one TDIS6 file")
+    tdis = workspace / tdis_files[0]
+    if not tdis.is_file():
+        raise ConfigurationError(f"TDIS file is missing: {tdis}")
+    units = None
+    for row in records(tdis):
+        if row[0].upper() == "ATS6":
+            raise ConfigurationError("ATS is not supported; use a static TDIS schedule")
+        if row[0].upper() == "TIME_UNITS" and len(row) > 1:
+            units = row[1].upper()
+    if units != "DAYS":
+        raise ConfigurationError(
+            "MF6PQC currently requires TDIS TIME_UNITS DAYS; chemistry time is converted to seconds"
+        )
+
+
+def initialize_modflow6(sim) -> None:
+    """Create and initialize the MODFLOW 6 backend for ``sim``."""
+    _logger.info("--- Initializing MODFLOW 6 ---")
+    dll_path = _require_file(sim.modflow_dll_path, "modflow_dll_path")
+    workspace = _require_directory(sim.workspace, "workspace")
+    validate_modflow_workspace(workspace)
+    sim.input_provenance["modflow_library"] = file_fingerprint(dll_path)
+    sim.workspace = workspace
+    _logger.info(f"Working directory: {workspace}")
+    api = None
+    initialized = False
+    try:
+        api = sim.backend_factory.create_modflow_api(dll_path, workspace)
+        api.initialize()
+        initialized = True
+        sim.modflow_api = api
+        sim.sim = sim.backend_factory.load_modflow_simulation(api)
+    except BaseException as exc:
+        if api is not None and initialized:
+            with contextlib.suppress(Exception):
+                api.finalize()
+        sim.modflow_api = None
+        if not isinstance(exc, Exception):
+            raise
+        raise BackendError(
+            "Failed to initialize MODFLOW 6. "
+            f"DLL: {dll_path}; workspace: {workspace}; reason: {exc}"
+        ) from exc

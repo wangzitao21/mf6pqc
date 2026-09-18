@@ -1,0 +1,86 @@
+# Hamann et al. (2015), Table 2: Fuente de Piedra model water.
+# The tabulated concentrations are mmol/kg water; K is 0.2054 mmol/kgw.
+SOLUTION 0
+    units     mmol/kgw
+    temp      25.0
+    pH        7.949
+    pe        4.0
+    Ca        5.885
+    Mg        8.260
+    Na        31.66
+    K         0.2054
+    Cl        45.90
+    C(4)      0.5951
+    S(6)      6.792
+    Br        0.06281
+END
+
+# Surface cells: minerals are initially absent, while atmospheric CO2 remains
+# available at pCO2 = 10^-3.5 atm.
+EQUILIBRIUM_PHASES 1
+    Calcite       0.0  0.0
+    Gypsum        0.0  0.0
+    Polyhalite    0.0  0.0
+    Hexahydrite   0.0  0.0
+    Halite        0.0  0.0
+    Bischofite    0.0  0.0
+    Mirabilite    0.0  0.0
+    CO2(g)       -3.5  10.0
+END
+
+# Subsurface cells have the same initially absent mineral assemblage but are
+# closed to atmospheric CO2.
+EQUILIBRIUM_PHASES 2
+    Calcite       0.0  0.0
+    Gypsum        0.0  0.0
+    Polyhalite    0.0  0.0
+    Hexahydrite   0.0  0.0
+    Halite        0.0  0.0
+    Bischofite    0.0  0.0
+    Mirabilite    0.0  0.0
+END
+
+# RHO must remain the final selected-output field: MF6PQC uses it for the
+# variable-density flow feedback.
+USER_PUNCH 1
+    -headings Calcite Gypsum Polyhalite Hexahydrite Halite Bischofite Mirabilite d_Calcite d_Gypsum d_Polyhalite d_Hexahydrite d_Halite d_Bischofite d_Mirabilite RHO
+    -start
+    10 PUNCH EQUI("Calcite")
+    20 PUNCH EQUI("Gypsum")
+    30 PUNCH EQUI("Polyhalite")
+    40 PUNCH EQUI("Hexahydrite")
+    50 PUNCH EQUI("Halite")
+    60 PUNCH EQUI("Bischofite")
+    70 PUNCH EQUI("Mirabilite")
+    110 PUNCH EQUI_DELTA("Calcite")
+    120 PUNCH EQUI_DELTA("Gypsum")
+    130 PUNCH EQUI_DELTA("Polyhalite")
+    140 PUNCH EQUI_DELTA("Hexahydrite")
+    150 PUNCH EQUI_DELTA("Halite")
+    160 PUNCH EQUI_DELTA("Bischofite")
+    170 PUNCH EQUI_DELTA("Mirabilite")
+    200 PUNCH RHO
+END
+
+SELECTED_OUTPUT 1
+    -reset          false
+    # High precision also forces a 1e-12 chemical convergence criterion,
+    # which causes unnecessary fallback iterations in concentrated Pitzer
+    # cells. Double-precision values are still returned through PhreeqcRM.
+    -high_precision false
+END
+
+KNOBS
+    # Start with the conservative settings that PHREEQC otherwise tries only
+    # after the default Newton solve has failed in high-salinity cells.
+    -iterations             200
+    -convergence_tolerance  1e-8
+    -tolerance              1e-14
+    -step_size              10
+    -pe_step_size           5
+    -diagonal_scale         true
+END
+
+PRINT
+    -warnings true
+END

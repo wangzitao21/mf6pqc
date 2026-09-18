@@ -1,0 +1,107 @@
+SOLUTION_MASTER_SPECIES
+H        H+             -1.     H               1.008
+H(0)     H2             0.0     H
+H(1)     H+             -1.     0.0
+E        e-             0.0     0.0             0.0
+O        H2O            0.0     O               16.00
+O(0)     O2             0.0     O
+O(-2)    H2O            0.0     0.0
+Ca       Ca+2           0.0     Ca              40.08
+Na       Na+            0.0     Na              22.9898
+Cl       Cl-            0.0     Cl              35.453
+C        CO3-2          2.0     HCO3            12.0111
+C(+4)    CO3-2          2.0     HCO3
+T        T-             0.0     T               50.
+Alkalinity CO3-2        1.0     Ca0.5(CO3)0.5   50.05
+
+SOLUTION_SPECIES
+
+H+ = H+
+        log_k           0.000
+        -gamma          9.0000    0.0000
+
+e- = e-
+        log_k           0.000
+
+H2O = H2O
+        log_k           0.000
+
+Ca+2 = Ca+2
+        log_k           0.000
+        -gamma    5.0000    0.1650
+
+Na+ = Na+
+        log_k           0.000
+        -gamma    4.0000    0.0750
+
+Cl- = Cl-
+        log_k           0.000
+        -gamma    3.5000    0.0150
+
+CO3-2 = CO3-2
+        log_k           0.000
+        -gamma    5.4000    0.0000
+
+T-    = T-     
+        log_k           0.000
+
+H2O = OH- + H+
+        log_k           -13.998
+        delta_h 13.362  kcal
+        -analytic       -283.971       -0.05069842  13323.0    102.24447      -1119669.0
+        -gamma    3.5000    0.0000
+
+2 H2O = O2 + 4 H+ + 4 e-
+        log_k           -86.08
+        delta_h 134.79 kcal
+
+2 H+ + 2 e- = H2
+        log_k           -3.15
+        delta_h -1.759
+
+CO3-2 + H+ = HCO3-
+        log_k           10.329
+        delta_h -3.561  kcal
+        -analytic       107.8871       0.03252849  -5151.79     -38.92561       563713.9
+        -gamma    5.4000    0.0000
+
+CO3-2 + 2 H+ = CO2 + H2O
+        log_k           16.681
+        delta_h -5.738  kcal
+        -analytic       464.1965       0.09344813  -26986.16    -165.75951      2248628.9
+
+
+Na+ + H2O = NaOH + H+
+        log_k           -14.179142
+
+
+EXCHANGE_MASTER_SPECIES
+        X       X-
+EXCHANGE_SPECIES
+        X- = X-
+        log_k           0.0
+
+        Na+ + X- = NaX
+        log_k          3.83  # Zysset (1993)
+
+        Ca+2 + 2X- = CaX2
+        log_k         10.0   # Zysset (1993)
+
+PHASES
+
+CO2(g)
+        CO2 = CO2
+        log_k           -1.468
+        delta_h -4.776 kcal
+        -analytic       108.3865      0.01985076   -6919.53      -40.45154      669365.0
+
+Calcite
+        CaCO3 = CO3-2 + Ca+2
+         log_k           -8.1432711   # Zysset (1993)
+
+
+Calciumtenside
+        CaT2  = 2 T- + Ca+2
+        log_k           -9.05     # Zysset (1993)
+    
+END

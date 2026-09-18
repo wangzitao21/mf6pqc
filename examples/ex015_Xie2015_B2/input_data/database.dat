@@ -1,0 +1,100 @@
+# Only the original aqueous network is enabled. Temperature: 25 C.
+SOLUTION_MASTER_SPECIES
+H H+ -1 H 1.008
+H(1) H+ -1 H
+H(0) H2 0 H
+E e- 0 0 0
+O H2O 0 O 15.9999
+O(-2) H2O 0 O
+O(0) O2 0 O
+Ca Ca+2 0 Ca 40.080
+C CO3-2 2 HCO3 12.0114
+C(4) CO3-2 2 HCO3
+S SO4-2 0 SO4 32.064
+S(6) SO4-2 0 SO4
+Na Na+ 0 Na 22.9898
+Alkalinity CO3-2 1 Ca0.5(CO3)0.5 50.0447
+SOLUTION_SPECIES
+e- = e-
+H2O = H2O
+2 H2O = O2 + 4 H+ + 4 e-
+    -log_k -86.08
+    -gamma 0 0.1
+2 H+ + 2 e- = H2
+    -log_k -3.067
+    -gamma 0 0.1
+H+ = H+
+    -gamma 9 0
+CO3-2 = CO3-2
+    -gamma 5.4 0
+Ca+2 = Ca+2
+    -gamma 6 0.17
+SO4-2 = SO4-2
+    -gamma 4 -0.04
+Na+ = Na+
+    -gamma 4 0.07
+1 H2O = OH- + 1 H+
+    -log_k -13.998
+    -delta_h 13.362 kcal
+    -gamma 3.5 0
+1 Ca+2 + 1 H2O = CaOH+ + 1 H+
+    -log_k -12.78
+    -delta_h 14.535 kcal
+    -gamma 6 0
+1 Ca+2 + 1 CO3-2 + 1 H+ = CaHCO3+
+    -log_k 11.44
+    -delta_h 5.41 kcal
+    -gamma 6 0
+1 Ca+2 + 1 CO3-2 = CaCO3
+    -log_k 3.22
+    -delta_h 4.03 kcal
+    -gamma 0 0.1
+1 Ca+2 + 1 SO4-2 = CaSO4
+    -log_k 2.309
+    -delta_h 1.47 kcal
+    -gamma 0 0.1
+1 Ca+2 + 1 SO4-2 + 1 H+ = CaHSO4+
+    -log_k 3.068
+    -delta_h 0 kcal
+    -gamma 3.047851265 0.12276
+1 Na+ + 1 CO3-2 = NaCO3-
+    -log_k 1.268
+    -delta_h 8.911 kcal
+    -gamma 5.4 0
+1 Na+ + 1 CO3-2 + 1 H+ = NaHCO3
+    -log_k 10.08
+    -delta_h 0 kcal
+    -gamma 0 0.1
+1 Na+ + 1 SO4-2 = NaSO4-
+    -log_k 0.7
+    -delta_h 1.12 kcal
+    -gamma 5.4 0
+1 CO3-2 + 1 H+ = HCO3-
+    -log_k 10.33
+    -delta_h -3.617 kcal
+    -gamma 5.4 0
+1 CO3-2 + 2 H+ = H2CO3
+    -log_k 16.681
+    -delta_h -2.247 kcal
+    -gamma 0 0.1
+1 SO4-2 + 1 H+ = HSO4-
+    -log_k 1.987
+    -delta_h 3.85 kcal
+    -gamma 4.5 0
+2 H+ + 1 SO4-2 = H2SO4
+    -log_k -1.0209
+    -delta_h 0 kcal
+    -gamma 0 0.1
+PHASES
+Calcite
+    CaCO3 = 1 Ca+2 + 1 CO3-2
+    -log_k -8.475
+    -delta_h -2.585 kcal
+Gypsum
+    CaSO4:2H2O = 1 Ca+2 + 1 SO4-2 + 2 H2O
+    -log_k -4.58
+    -delta_h -0.109 kcal
+O2(g)
+    O2 = O2
+    -log_k -2.898
+END

@@ -1,0 +1,36 @@
+SOLUTION_MASTER_SPECIES
+H        H+       -1.0  H        1.008
+H(0)     H2        0.0  H
+H(1)     H+       -1.0  0.0
+E        e-        0.0  0.0      0.0
+O        H2O       0.0  O        16.00
+O(0)     O2        0.0  O
+O(-2)    H2O       0.0  0.0
+Tracer   Tracer    0.0  Tracer   1.0
+Product  Product   0.0  Product  1.0
+
+SOLUTION_SPECIES
+H+ = H+
+    log_k  0.0
+    -gamma 9.0 0.0
+e- = e-
+    log_k  0.0
+H2O = H2O
+    log_k  0.0
+Tracer = Tracer
+    log_k  0.0
+Product = Product
+    log_k  0.0
+H2O = OH- + H+
+    log_k     -14.0
+    delta_h    13.362 kcal
+    -analytic -283.971 -0.05069842 13323.0 102.24447 -1119669.0
+    -gamma      3.5 0.0
+2 H2O = O2 + 4 H+ + 4 e-
+    log_k    -86.08
+    delta_h  134.79 kcal
+2 H+ + 2 e- = H2
+    log_k    -3.15
+    delta_h  -1.759 kcal
+
+END

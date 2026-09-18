@@ -1,0 +1,80 @@
+SOLUTION_MASTER_SPECIES
+    Don   Don   0.0   Don   1.0
+
+SOLUTION_SPECIES
+    Don = Don
+        log_k 0.0
+
+SOLUTION 0 Background
+    units mol/L
+    temp 20
+    pH 7.0 charge
+    Don  0.0
+END
+
+SOLUTION 1 Donor_pulse
+    units mol/L
+    temp 20
+    pH 7.0 charge
+    Don  1.0e-3
+END
+
+# Matrix cells contain 2e-4 mol of ferric-oxide electron-equivalent capacity.
+# PARM(2) is a fast pseudo-first-order rate in day^-1.
+KINETICS 1 Matrix_ferric_capacity
+    Ferric_reduction
+        -m0 1.0
+        -parms 2.0e-4 5.0
+        -formula Don -1.0
+        -tol 1.0e-12
+END
+
+# The diagonal lens contains four times the matrix oxidant capacity.
+KINETICS 2 Lens_ferric_capacity
+    Ferric_reduction
+        -m0 1.0
+        -parms 8.0e-4 5.0
+        -formula Don -1.0
+        -tol 1.0e-12
+END
+
+RATES 1
+    Ferric_reduction
+    -start
+    10 donor = TOT("Don")
+    20 reacted = M0 - M
+    30 remaining = PARM(1) - reacted
+    40 if (donor <= 0 OR remaining <= 0) then SAVE 0 : GOTO 100
+    50 rate_constant = PARM(2) / 86400
+    60 rate = rate_constant * donor
+    70 moles = rate * TIME * TOT("water")
+    80 if (moles > donor * TOT("water")) then moles = donor * TOT("water")
+    90 if (moles > remaining) then moles = remaining
+    100 SAVE moles
+    -end
+END
+
+USER_PUNCH 1
+    -headings Don Redox_extent
+    -start
+    10 PUNCH TOT("Don") * TOT("water") / SOLN_VOL
+    20 PUNCH 1.0 - KIN("Ferric_reduction")
+    -end
+END
+
+SELECTED_OUTPUT 1
+    -step false
+    -high_precision true
+    -water false
+    -solution false
+    -pH false
+    -simulation false
+    -state false
+    -time false
+    -pe false
+    -distance false
+END
+
+PRINT
+    -warnings 0
+END

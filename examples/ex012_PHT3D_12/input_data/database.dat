@@ -1,0 +1,168 @@
+###  Surface Complexation: 1D-Transport of U(VI) 
+###  Kohler et al., 1996, Wat. Resour. Res.
+###  
+###  Database for Model C5 
+
+
+SOLUTION_MASTER_SPECIES
+#
+#element	species	alk	gfw_formula	element_gfw
+#
+H		H+	-1.0	H		1.008
+H(0)		H2	0.0	H
+H(1)		H+	-1.0	0.0
+E		e-	0.0	0.0		0.0
+O		H2O	0.0	O		16.0
+O(0)		O2	0.0	O
+O(-2)		H2O	0.0	0.0
+F		F-	0.0	F		18.9984
+Na		Na+	0.0	Na		22.9898
+N		NO3-	0.0	N		14.0067
+N(+5)		NO3-	0.0	N
+U		UO2+2	0.0	U		238.0290
+U(+6)	        UO2+2	0.0	U
+Tracer		Tracer  0.0	Tracer		1
+
+
+SOLUTION_SPECIES
+
+
+H+ = H+
+	log_k	0.0
+	-gamma	9.0	0.0
+
+e- = e-
+	log_k	0.0
+
+H2O = H2O
+	log_k	0.0
+	
+H2O = OH- + H+
+	log_k	-14.0
+	delta_h 13.362	kcal
+	-analytic	-283.971	-0.05069842	13323.0	102.24447	-1119669.0
+	-gamma	3.5	0.0
+
+2 H2O = O2 + 4 H+ + 4 e-
+	log_k	-86.08
+	delta_h 134.79 kcal
+
+2 H+ + 2 e- = H2
+	log_k	-3.15
+	delta_h -1.759
+	
+	
+Na+ = Na+
+	log_k	0.0
+	-gamma	4.0	0.075
+
+NO3- = NO3-
+	log_k	0.0
+	-gamma	3.0	0.0
+	
+
+Tracer = Tracer 
+	log_k 0.0
+
+
+F- = F-
+	log_k		0.0
+
+
+UO2+2 = UO2+2
+	log_k		0.0
+
+
+
+
+#-----------------------------------------------------------------------------------------------
+#     Kohler et al. 1996, WRR - reaction network, thermodynamic data for ionic strength I=0.0
+#-----------------------------------------------------------------------------------------------
+
+UO2+2 + H2O = UO2OH+ + H+
+	log_k		-5.20
+
+UO2+2 + 2 H2O = UO2(OH)2 + 2 H+
+	log_k		-12
+	
+UO2+2 + 3 H2O = UO2(OH)3- + 3 H+
+	log_k		-20
+	
+	
+UO2+2 + 4 H2O = UO2(OH)4-2 + 4 H+
+	log_k		-33
+	
+2 UO2+2 + H2O = (UO2)2(OH)+3 + H+
+	log_k		-2.80
+	
+
+2 UO2+2 + 2 H2O = (UO2)2(OH)2+2 + 2 H+
+	log_k		-5.63
+	
+
+3 UO2+2 + 4 H2O = (UO2)3(OH)4+2 + 4 H+
+	log_k		-11.90
+	
+
+3 UO2+2 + 5 H2O = (UO2)3(OH)5+ + 5 H+
+	log_k		-15.56
+	
+3 UO2+2 + 7 H2O = (UO2)3(OH)7- + 7 H+
+	log_k		-31.00
+	
+4 UO2+2 + 7 H2O = (UO2)4(OH)7+ + 7 H+
+	log_k		-21.9
+	
+UO2+2 + NO3- = UO2NO3+
+	log_k		0.26
+
+UO2+2 + F- = UO2F+
+	log_k		5.09
+
+UO2+2 + 2F- = UO2F2
+	log_k		8.62
+
+UO2+2 + 3F- = UO2F3-
+	log_k		10.90
+	
+UO2+2 + 4F- = UO2F4-2
+	log_k		11.70
+	
+H+ + F- = HF
+	log_k		3.17
+
+H+ + 2F- = HF2-
+	log_k		3.75
+
+
+	
+SURFACE_MASTER_SPECIES
+	S_a	S_aOH
+	S_b	S_bOH
+	S_c	S_cOH
+
+SURFACE_SPECIES
+
+S_aOH =	S_aOH
+	log_k 0.0
+	
+S_bOH =	S_bOH
+	log_k 0.0
+	
+S_cOH =	S_cOH
+	log_k 0.0
+	
+
+S_aOH + UO2+2 + H2O = S_aOUO2OH + 2 H+
+	log_k  -4.9503 # re-calculated for ionic strength I=0.0; original value in paper is log_k = -5.04
+
+S_bOH + UO2+2 + H2O = S_bOUO2OH + 2 H+
+	log_k   -3.4703 # re-calculated for ionic strength I=0.0; original value in paper is log_k = -3.56 
+
+S_bOH + UO2+2 = S_bOUO2+ + H+
+	log_k   0.7766  # re-calculated for ionic strength I=0.0; original value in paper is log_k = 0.642
+
+S_cOH + UO2+2 + H2O = S_cOUO2OH + 2 H+
+	log_k   -1.0603   # re-calculated for ionic strength I=0.0; original value in paper is log_k = -1.15
+
+END
